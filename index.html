@@ -1,0 +1,2195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Trace Studio">
+<meta name="format-detection" content="telephone=no">
+<title>Plotter Trace Studio</title>
+<style>
+:root{
+  --desk:#15171C; --panel:#1D2026; --panel2:#23262E; --line:#2B2F38; --line2:#363B46;
+  --ink:#E9EBEF; --mute:#8A909C; --dim:#5D6370;
+  --pen:#45C4AC; --pen-soft:rgba(69,196,172,.16);
+  --travel:#E5A84B; --danger:#E06A5E;
+  --paper:#FBFAF6;
+  --radius:10px; --shadow:0 10px 30px rgba(0,0,0,.45);
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+body{background:var(--desk);color:var(--ink);font-family:var(--sans);font-size:14px;
+  display:flex;flex-direction:column;touch-action:none;
+  position:fixed;inset:0;width:100%;height:100dvh;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left)}
+input,textarea{-webkit-user-select:auto;user-select:auto}
+#panelbody,.dialog{touch-action:pan-y}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+input,select{font:inherit;color:var(--ink);background:var(--panel2);border:1px solid var(--line2);
+  border-radius:6px;padding:6px 8px;min-height:34px}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--pen);outline-offset:1px}
+input[type=range]{-webkit-appearance:none;appearance:none;height:28px;padding:0;background:transparent;border:none;width:100%}
+input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:var(--line2)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;
+  background:var(--pen);margin-top:-8px;border:3px solid var(--panel)}
+input[type=range]::-moz-range-track{height:6px;border-radius:3px;background:var(--line2)}
+input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--pen);border:3px solid var(--panel)}
+input[type=color]{padding:2px;min-height:34px;width:44px}
+input[type=checkbox]{width:18px;height:18px;accent-color:var(--pen);min-height:0}
+
+/* ---------- Top bar ---------- */
+#topbar{display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--panel);
+  border-bottom:1px solid var(--line);flex:0 0 auto;z-index:30}
+#topbar .brand{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--mute);
+  margin-right:6px;white-space:nowrap}
+#topbar .brand b{color:var(--pen);font-weight:600}
+.tbtn{display:flex;align-items:center;justify-content:center;gap:6px;min-width:44px;height:44px;
+  padding:0 10px;border-radius:8px;color:var(--ink);font-size:13px;white-space:nowrap}
+.tbtn:hover{background:var(--panel2)}
+.tbtn:disabled{color:var(--dim)}
+.tbtn.on{background:var(--pen-soft);color:var(--pen)}
+.tbtn svg{width:20px;height:20px;flex:0 0 auto}
+.tbtn .lbl{font-size:12px}
+.spacer{flex:1}
+.vsep{width:1px;height:24px;background:var(--line);margin:0 2px}
+
+/* ---------- Layout ---------- */
+#main{flex:1;display:flex;min-height:0;position:relative}
+#dock{display:flex;flex-direction:column;gap:2px;padding:8px 6px;background:var(--panel);
+  border-right:1px solid var(--line);overflow-y:auto;z-index:25}
+.dbtn{display:flex;flex-direction:column;align-items:center;gap:2px;width:56px;height:54px;
+  border-radius:9px;color:var(--mute);justify-content:center}
+.dbtn svg{width:21px;height:21px}
+.dbtn span{font-size:9.5px;letter-spacing:.02em}
+.dbtn:hover{background:var(--panel2);color:var(--ink)}
+.dbtn.on{background:var(--pen-soft);color:var(--pen)}
+.dsep{height:1px;background:var(--line);margin:5px 4px}
+
+#canvaswrap{flex:1;position:relative;min-width:0;background:
+  radial-gradient(1200px 700px at 30% 20%, #1A1D23 0%, var(--desk) 70%)}
+#svg{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
+#svg .paper{fill:var(--paper)}
+#svg .papershadow{fill:rgba(0,0,0,.5);filter:blur(6px)}
+#svg .margin{fill:none;stroke:#9db9d6;stroke-width:1;stroke-dasharray:4 4;vector-effect:non-scaling-stroke;opacity:.55}
+#svg .gridminor{stroke:#000;opacity:.06;vector-effect:non-scaling-stroke;stroke-width:1}
+#svg .gridmajor{stroke:#000;opacity:.13;vector-effect:non-scaling-stroke;stroke-width:1}
+#svg .selbox{fill:none;stroke:var(--pen);stroke-width:1.25;vector-effect:non-scaling-stroke;stroke-dasharray:5 4}
+#svg .handle{fill:var(--panel);stroke:var(--pen);stroke-width:1.5;vector-effect:non-scaling-stroke}
+#svg .marquee{fill:rgba(69,196,172,.08);stroke:var(--pen);stroke-width:1;vector-effect:non-scaling-stroke;stroke-dasharray:4 3}
+#svg .node{fill:#fff;stroke:#2f7dd1;stroke-width:1.5;vector-effect:non-scaling-stroke}
+#svg .node.sel{fill:#2f7dd1}
+#svg .travel{stroke:var(--travel);stroke-width:1;vector-effect:non-scaling-stroke;stroke-dasharray:5 4;fill:none;opacity:.9}
+#svg .ordbadge circle{fill:var(--travel);stroke:#2b230f;stroke-width:.5;vector-effect:non-scaling-stroke}
+#svg .ordbadge text{fill:#241c09;font:600 8px var(--mono);text-anchor:middle;dominant-baseline:central}
+#svg .enddot{fill:none;stroke:var(--travel);stroke-width:1.2;vector-effect:non-scaling-stroke}
+#svg .pathsel{stroke:var(--pen)!important}
+#svg .pathhalo{stroke:rgba(69,196,172,.35);fill:none}
+
+#statusbar{display:flex;align-items:center;gap:14px;padding:4px 12px calc(4px + env(safe-area-inset-bottom));
+  background:var(--panel);border-top:1px solid var(--line);font-family:var(--mono);font-size:11.5px;
+  color:var(--mute);flex:0 0 auto;overflow-x:auto;white-space:nowrap}
+#statusbar .val{color:var(--ink)}
+#statusbar .plotstat{color:var(--travel)}
+#statusbar .penstat{color:var(--pen)}
+
+/* ---------- Right panel ---------- */
+#panel{width:296px;background:var(--panel);border-left:1px solid var(--line);display:flex;
+  flex-direction:column;min-height:0;z-index:25}
+#paneltabs{display:flex;border-bottom:1px solid var(--line)}
+#paneltabs button{flex:1;padding:13px 4px;min-height:46px;font-size:12px;color:var(--mute);border-bottom:2px solid transparent}
+#paneltabs button.on{color:var(--pen);border-bottom-color:var(--pen)}
+#panelbody{flex:1;overflow-y:auto;padding:12px;-webkit-overflow-scrolling:touch}
+.sect{margin-bottom:16px}
+.sect h3{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--mute);margin-bottom:8px}
+.row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.row label{flex:1;color:var(--mute);font-size:13px}
+.row .rv{font-family:var(--mono);font-size:12px;color:var(--ink);min-width:44px;text-align:right}
+.row input[type=range]{flex:2.2}
+.row select,.row input[type=number],.row input[type=text]{flex:1.4;min-width:0}
+.btnrow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.sbtn{padding:10px 12px;border-radius:8px;background:var(--panel2);border:1px solid var(--line2);
+  font-size:12.5px;min-height:44px}
+.sbtn:hover{border-color:var(--pen)}
+.sbtn.on{background:var(--pen-soft);border-color:var(--pen);color:var(--pen)}
+.sbtn.danger{color:var(--danger)}
+.sbtn.primary{background:var(--pen);color:#0d2620;border-color:var(--pen);font-weight:600}
+.hint{font-size:11.5px;color:var(--dim);line-height:1.45;margin-top:4px}
+
+/* Layers */
+.layer{display:flex;align-items:center;gap:2px;padding:5px 4px;border-radius:8px;border:1px solid transparent;margin-bottom:4px}
+.layer.on{background:var(--panel2);border-color:var(--pen)}
+.layer .sw{width:14px;height:14px;border-radius:4px;flex:0 0 auto;border:1px solid rgba(255,255,255,.15)}
+.layer .nm{flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.layer .nm small{color:var(--dim);font-size:10px;display:block}
+.ibtn{width:44px;height:44px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+  color:var(--mute);position:relative;flex:0 0 auto}
+.ibtn::after{content:"";position:absolute;inset:-4px}
+.ibtn:hover{background:var(--line);color:var(--ink)}
+.ibtn.off{color:var(--dim)}
+.ibtn svg{width:18px;height:18px}
+
+/* ---------- Modals ---------- */
+.modal{position:fixed;inset:0;background:rgba(8,9,12,.66);display:none;align-items:center;
+  justify-content:center;z-index:100;padding:16px}
+.modal.open{display:flex}
+.dialog{background:var(--panel);border:1px solid var(--line2);border-radius:14px;box-shadow:var(--shadow);
+  width:min(460px,100%);max-height:85dvh;overflow-y:auto;padding:20px;-webkit-overflow-scrolling:touch}
+.dialog h2{font-size:16px;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.dialog h2 .dot{width:8px;height:8px;border-radius:50%;background:var(--pen)}
+.dlgfoot{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+.formgrid{display:grid;grid-template-columns:110px 1fr;gap:10px;align-items:center}
+.formgrid label{color:var(--mute);font-size:13px}
+.exptabs{display:flex;gap:4px;margin-bottom:14px;background:var(--panel2);padding:4px;border-radius:9px}
+.exptabs button{flex:1;padding:12px 8px;min-height:44px;border-radius:6px;font-size:13px;color:var(--mute)}
+.exptabs button.on{background:var(--pen-soft);color:var(--pen)}
+.stats{font-family:var(--mono);font-size:12px;background:var(--panel2);border-radius:8px;padding:10px;
+  margin:12px 0;display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;color:var(--mute)}
+.stats b{color:var(--ink);font-weight:500}
+.stats .warn{color:var(--travel)}
+textarea.cmd{width:100%;font-family:var(--mono);font-size:12px;background:var(--panel2);
+  border:1px solid var(--line2);border-radius:6px;color:var(--ink);padding:6px;resize:vertical}
+
+#toast{position:fixed;left:50%;bottom:70px;transform:translateX(-50%) translateY(20px);background:var(--panel2);
+  border:1px solid var(--line2);border-radius:10px;padding:10px 16px;font-size:13px;opacity:0;
+  pointer-events:none;transition:.25s;z-index:200;box-shadow:var(--shadow);max-width:90vw}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+#menu{position:absolute;top:52px;left:8px;background:var(--panel);border:1px solid var(--line2);
+  border-radius:10px;box-shadow:var(--shadow);display:none;flex-direction:column;min-width:220px;
+  padding:6px;z-index:90}
+#menu.open{display:flex}
+#menu button{text-align:left;padding:10px 12px;border-radius:7px;font-size:13.5px;display:flex;gap:10px;align-items:center}
+#menu button:hover{background:var(--panel2)}
+#menu .msep{height:1px;background:var(--line);margin:5px 8px}
+#menu kbd{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--dim)}
+
+/* ---------- Small screens ---------- */
+#panelToggleFab,#dockFab{display:none}
+/* ---- Tier A: iPad landscape & desktop (≥901px) — rail + collapsible side panel ---- */
+#sheetgrip{display:none}
+#panel.hidden{display:none}
+
+/* ---- Tier B: iPad portrait (600–900px) — persistent tool rail + bottom sheet ---- */
+@media (max-width:900px) and (min-width:600px){
+  #dock{padding:8px 5px}                       /* rail stays visible: no tap cost to switch tools */
+  .dbtn{width:54px;height:52px}
+  #dockFab{display:none}
+  #panel{position:absolute;left:66px;right:0;bottom:0;top:auto;width:auto;
+    height:var(--sheeth,44dvh);min-height:180px;
+    border-left:none;border-top:1px solid var(--line2);border-radius:16px 16px 0 0;
+    transform:translateY(100%);transition:transform .22s;box-shadow:var(--shadow)}
+  #panel.open{transform:none}
+  #sheetgrip{display:flex;align-items:center;justify-content:center;height:22px;flex:0 0 auto;
+    touch-action:none;cursor:ns-resize}
+  #sheetgrip::before{content:"";width:44px;height:5px;border-radius:3px;background:var(--line2)}
+  #panelbody{padding:12px 14px calc(12px + env(safe-area-inset-bottom))}
+  #panelToggleFab{display:flex;position:absolute;right:14px;bottom:14px;z-index:26;width:54px;height:54px;
+    border-radius:50%;background:var(--panel2);border:1px solid var(--line2);color:var(--ink);
+    align-items:center;justify-content:center;box-shadow:var(--shadow)}
+  #panelToggleFab{z-index:30}
+  #panelToggleFab svg{width:24px;height:24px}
+  .tbtn .lbl{display:none}
+}
+
+/* ---- Tier C: iPhone (≤599px) — everything on demand ---- */
+@media (max-width:599px){
+  #dock{position:absolute;left:0;right:0;bottom:0;top:auto;flex-direction:row;justify-content:flex-start;
+    overflow-x:auto;overflow-y:hidden;border-right:none;border-top:1px solid var(--line);
+    padding:6px 8px calc(6px + env(safe-area-inset-bottom));transform:translateY(110%);transition:.22s}
+  #dock.open{transform:none}
+  .dbtn{width:56px;flex:0 0 auto}
+  .dsep{width:1px;height:auto;margin:4px 5px}
+  #panel{position:absolute;right:0;top:0;bottom:0;transform:translateX(105%);transition:.22s;
+    box-shadow:var(--shadow);width:min(320px,88vw)}
+  #panel.open{transform:none}
+  #statusbar{padding-bottom:calc(4px + env(safe-area-inset-bottom))}
+  #dockFab{display:flex;position:absolute;left:12px;bottom:14px;z-index:26;width:52px;height:52px;
+    border-radius:50%;background:var(--pen);color:#0d2620;align-items:center;justify-content:center;box-shadow:var(--shadow)}
+  #dockFab svg{width:24px;height:24px}
+  #panelToggleFab{display:flex;position:absolute;right:12px;bottom:14px;z-index:26;width:52px;height:52px;
+    border-radius:50%;background:var(--panel2);border:1px solid var(--line2);color:var(--ink);
+    align-items:center;justify-content:center;box-shadow:var(--shadow)}
+  #panelToggleFab svg{width:22px;height:22px}
+  .tbtn .lbl{display:none}
+  #topbar .brand{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- ============ TOP BAR ============ -->
+<div id="topbar">
+  <button class="tbtn" id="btnMenu" title="Menu">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+  </button>
+  <span class="brand">Plotter <b>Trace</b> Studio</span>
+  <div class="vsep"></div>
+  <button class="tbtn" id="btnUndo" title="Undo (⌘Z / two-finger tap)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>
+  </button>
+  <button class="tbtn" id="btnRedo" title="Redo (⇧⌘Z)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg>
+  </button>
+  <div class="vsep"></div>
+  <button class="tbtn" id="btnGrid" title="Grid"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/><rect x="3" y="3" width="18" height="18" rx="1"/></svg><span class="lbl">Grid</span></button>
+  <button class="tbtn" id="btnSnap" title="Snap to grid"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 4v7a6 6 0 0 0 12 0V4"/><path d="M4 4h4M16 4h4"/></svg><span class="lbl">Snap</span></button>
+  <button class="tbtn" id="btnPlotPrev" title="Plot preview: pen-down paths, dashed pen-up travel, order numbers">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/><path d="M6.5 17.5 12 12"/><path d="M13.5 10.5 17.5 6.5" stroke-dasharray="2.5 2.5"/></svg>
+    <span class="lbl">Plot</span>
+  </button>
+  <div class="spacer"></div>
+  <button class="tbtn" id="btnFit" title="Fit page (double-tap canvas)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 3H4v5M15 3h5v5M9 21H4v-5M15 21h5v-5"/></svg><span class="lbl">Fit</span></button>
+  <button class="tbtn" id="btnPanel" title="Show/hide properties panel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
+  <button class="tbtn" id="btnExport" title="Export"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg><span class="lbl">Export</span></button>
+</div>
+
+<!-- ============ MENU ============ -->
+<div id="menu">
+  <button id="mNew">New project…</button>
+  <button id="mOpen">Open project file…</button>
+  <button id="mSave">Save project file <kbd>⌘S</kbd></button>
+  <div class="msep"></div>
+  <button id="mImg">Import image…</button>
+  <div class="msep"></div>
+  <button id="mHelp">Gestures &amp; shortcuts</button>
+</div>
+
+<!-- ============ MAIN ============ -->
+<div id="main">
+  <div id="dock"></div>
+
+  <div id="canvaswrap">
+    <svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg>
+    <button id="dockFab" title="Tools"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7a3.5 3.5 0 0 0-5-5l-7 7L4 20l6-1z"/></svg></button>
+    <button id="panelToggleFab" title="Panels"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14 4v16"/></svg></button>
+  </div>
+
+  <div id="panel">
+    <div id="sheetgrip"></div>
+    <div id="paneltabs">
+      <button data-tab="stroke" class="on">Stroke</button>
+      <button data-tab="object">Object</button>
+      <button data-tab="layers">Layers</button>
+      <button data-tab="page">Page</button>
+      <button data-tab="plot">Plot</button>
+    </div>
+    <div id="panelbody"></div>
+  </div>
+</div>
+
+<!-- ============ STATUS ============ -->
+<div id="statusbar">
+  <span>x <span class="val" id="stX">–</span></span>
+  <span>y <span class="val" id="stY">–</span></span>
+  <span>zoom <span class="val" id="stZoom">100%</span></span>
+  <span>paths <span class="val" id="stPaths">0</span></span>
+  <span id="stPlot" style="display:none">
+    <span class="penstat">draw <span id="stDraw">0</span> mm</span>&ensp;·&ensp;<span class="plotstat">travel <span id="stTravel">0</span> mm</span>
+  </span>
+</div>
+
+<!-- ============ NEW PROJECT ============ -->
+<div class="modal" id="modalNew">
+  <div class="dialog">
+    <h2><span class="dot"></span>New project</h2>
+    <div class="formgrid">
+      <label>Name</label><input type="text" id="npName" value="Untitled trace">
+      <label>Paper</label>
+      <select id="npPreset">
+        <option value="148,210">A5 · 148 × 210</option>
+        <option value="210,297" selected>A4 · 210 × 297</option>
+        <option value="297,420">A3 · 297 × 420</option>
+        <option value="420,594">A2 · 420 × 594</option>
+        <option value="216,279">Letter · 216 × 279</option>
+        <option value="216,356">Legal · 216 × 356</option>
+        <option value="200,200">Square · 200 × 200</option>
+        <option value="custom">Custom…</option>
+      </select>
+      <label>Orientation</label>
+      <select id="npOrient"><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select>
+      <label>Width (mm)</label><input type="number" id="npW" value="210" min="10" max="2000">
+      <label>Height (mm)</label><input type="number" id="npH" value="297" min="10" max="2000">
+      <label>Margin (mm)</label><input type="number" id="npMargin" value="10" min="0" max="200">
+    </div>
+    <p class="hint">Units are millimetres — exports carry real paper dimensions. The dashed frame marks the safe plotting boundary.</p>
+    <div class="dlgfoot">
+      <button class="sbtn" id="npCancel">Cancel</button>
+      <button class="sbtn primary" id="npCreate">Create</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ EXPORT ============ -->
+<div class="modal" id="modalExport">
+  <div class="dialog">
+    <h2><span class="dot"></span>Export</h2>
+    <div class="exptabs">
+      <button data-fmt="svg" class="on">SVG</button>
+      <button data-fmt="dxf">DXF</button>
+      <button data-fmt="gcode">G-code</button>
+    </div>
+    <div id="expOpts"></div>
+    <div class="stats" id="expStats"></div>
+    <div class="dlgfoot">
+      <button class="sbtn" id="expCancel">Close</button>
+      <button class="sbtn primary" id="expGo">Download</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ HELP ============ -->
+<div class="modal" id="modalHelp">
+  <div class="dialog">
+    <h2><span class="dot"></span>Gestures &amp; shortcuts</h2>
+    <div style="font-size:13px;line-height:1.8;color:var(--mute)">
+      <b style="color:var(--ink)">Touch / Apple Pencil</b><br>
+      One finger or Pencil draws · Two fingers — pan &amp; pinch zoom<br>
+      Two-finger tap — undo · Double-tap (Select/Pan tool) — fit page<br>
+      Palm is ignored while the Pencil is down · “Finger drawing” can be turned off in Stroke to make one finger pan instead<br><br>
+      <b style="color:var(--ink)">Keyboard</b><br>
+      V select · B draw · P pen · L line · N nodes · E erase · H pan<br>
+      ⌘Z undo · ⇧⌘Z redo · ⌘S save · Delete removes selection<br>
+      Esc cancels the current tool action · +/− zoom · 0 fit page
+    </div>
+    <div class="dlgfoot"><button class="sbtn primary" id="helpClose">Done</button></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<input type="file" id="fileImg" accept="image/*" hidden>
+<input type="file" id="fileProj" accept=".json,.plottrace,application/json" hidden>
+
+<script>
+"use strict";
+/* =====================================================================
+   Plotter Trace Studio — single-file app
+   Sections: helpers · state · history · view · rendering · input/tools ·
+   panels · layers · images · plot order/preview · export · storage · boot
+===================================================================== */
+
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const SVGNS="http://www.w3.org/2000/svg";
+const el=(n,at={},parent)=>{const e=document.createElementNS(SVGNS,n);
+  for(const k in at)e.setAttribute(k,at[k]); if(parent)parent.appendChild(e); return e;};
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const dist=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]);
+const fmt=(v,d=1)=>(+v).toFixed(d).replace(/\.0+$/,"");
+const uid=()=> "id"+Math.random().toString(36).slice(2,9);
+let toastT; function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");
+  clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),2400);}
+
+/* ---------------- Geometry ---------------- */
+function pathLength(pts){let L=0;for(let i=1;i<pts.length;i++)L+=dist(pts[i-1],pts[i]);return L;}
+function rdp(pts,eps){ // Ramer–Douglas–Peucker
+  if(pts.length<3)return pts.slice();
+  const keep=new Uint8Array(pts.length);keep[0]=keep[pts.length-1]=1;
+  const stack=[[0,pts.length-1]];
+  while(stack.length){
+    const [a,b]=stack.pop();let maxD=0,idx=-1;
+    const A=pts[a],B=pts[b],dx=B[0]-A[0],dy=B[1]-A[1],len2=dx*dx+dy*dy;
+    for(let i=a+1;i<b;i++){
+      const P=pts[i];let d;
+      if(len2===0)d=dist(P,A);
+      else{const t=clamp(((P[0]-A[0])*dx+(P[1]-A[1])*dy)/len2,0,1);
+        d=Math.hypot(P[0]-(A[0]+t*dx),P[1]-(A[1]+t*dy));}
+      if(d>maxD){maxD=d;idx=i;}
+    }
+    if(maxD>eps&&idx>0){keep[idx]=1;stack.push([a,idx],[idx,b]);}
+  }
+  return pts.filter((_,i)=>keep[i]);
+}
+function resampleUniform(pts,h){ // even arc-length spacing — the key to kink-free curves
+  if(pts.length<2)return pts.slice();
+  const out=[pts[0].slice()];
+  let prev=pts[0],need=h;
+  for(let i=1;i<pts.length;i++){
+    const b=pts[i];
+    let segLen=dist(prev,b);
+    while(segLen>=need&&segLen>1e-9){
+      const t=need/segLen;
+      prev=[prev[0]+(b[0]-prev[0])*t, prev[1]+(b[1]-prev[1])*t];
+      out.push(prev.slice());
+      segLen=dist(prev,b);
+      need=h;
+    }
+    need-=segLen;
+    prev=b;
+  }
+  const last=pts[pts.length-1];
+  if(dist(out[out.length-1],last)>h*0.25)out.push(last.slice());
+  else out[out.length-1]=last.slice();
+  return out;
+}
+function dedupe(pts){
+  const out=[pts[0]];
+  for(let i=1;i<pts.length;i++)if(dist(pts[i],out[out.length-1])>1e-6)out.push(pts[i]);
+  return out;
+}
+function crControls(p0,p1,p2,p3){ // centripetal Catmull-Rom → cubic Bézier controls (no cusps)
+  const eps=1e-4;
+  const d0=Math.max(Math.sqrt(dist(p0,p1)),eps);
+  const d1=Math.max(Math.sqrt(dist(p1,p2)),eps);
+  const d2=Math.max(Math.sqrt(dist(p2,p3)),eps);
+  const m1x=d1*((p1[0]-p0[0])/d0-(p2[0]-p0[0])/(d0+d1)+(p2[0]-p1[0])/d1);
+  const m1y=d1*((p1[1]-p0[1])/d0-(p2[1]-p0[1])/(d0+d1)+(p2[1]-p1[1])/d1);
+  const m2x=d1*((p2[0]-p1[0])/d1-(p3[0]-p1[0])/(d1+d2)+(p3[0]-p2[0])/d2);
+  const m2y=d1*((p2[1]-p1[1])/d1-(p3[1]-p1[1])/(d1+d2)+(p3[1]-p2[1])/d2);
+  return [[p1[0]+m1x/3,p1[1]+m1y/3],[p2[0]-m2x/3,p2[1]-m2y/3]];
+}
+function catmullSample(ptsIn,closed,tolMM=0.25){ // flatten smooth curve to a polyline
+  const pts=dedupe(ptsIn);
+  if(pts.length<3)return pts.slice();
+  const n=pts.length,P=i=>closed?pts[(i%n+n)%n]:pts[clamp(i,0,n-1)];
+  const out=[pts[0].slice()];
+  const segN=closed?n:n-1;
+  for(let i=0;i<segN;i++){
+    const p1=P(i),p2=P(i+1);
+    const [c1,c2]=crControls(P(i-1),p1,p2,P(i+2));
+    const steps=clamp(Math.ceil(dist(p1,p2)/Math.max(tolMM,.05)),2,64);
+    for(let s=1;s<=steps;s++){
+      const t=s/steps,u=1-t;
+      out.push([
+        u*u*u*p1[0]+3*u*u*t*c1[0]+3*u*t*t*c2[0]+t*t*t*p2[0],
+        u*u*u*p1[1]+3*u*u*t*c1[1]+3*u*t*t*c2[1]+t*t*t*p2[1]
+      ]);
+    }
+  }
+  return out;
+}
+function pathToD(p){ // SVG "d" — centripetal Catmull-Rom → cubic Bézier if smooth
+  const pts=p.smooth?dedupe(p.pts):p.pts;if(!pts.length)return"";
+  if(!p.smooth||pts.length<3){
+    let d=`M${fmt(pts[0][0],3)} ${fmt(pts[0][1],3)}`;
+    for(let i=1;i<pts.length;i++)d+=`L${fmt(pts[i][0],3)} ${fmt(pts[i][1],3)}`;
+    return d+(p.closed?"Z":"");
+  }
+  const n=pts.length,P=i=>p.closed?pts[(i%n+n)%n]:pts[clamp(i,0,n-1)];
+  let d=`M${fmt(pts[0][0],3)} ${fmt(pts[0][1],3)}`;
+  const segN=p.closed?n:n-1;
+  for(let i=0;i<segN;i++){
+    const [c1,c2]=crControls(P(i-1),P(i),P(i+1),P(i+2));
+    const p2=P(i+1);
+    d+=`C${fmt(c1[0],3)} ${fmt(c1[1],3)} ${fmt(c2[0],3)} ${fmt(c2[1],3)} ${fmt(p2[0],3)} ${fmt(p2[1],3)}`;
+  }
+  return d+(p.closed?"Z":"");
+}
+function flatPts(p,tol=0.25){ // geometry used for hit-tests, stats, DXF, G-code
+  let pts=p.smooth?catmullSample(p.pts,p.closed,tol):p.pts.slice();
+  if(p.closed&&(pts[0][0]!==pts[pts.length-1][0]||pts[0][1]!==pts[pts.length-1][1]))
+    pts=pts.concat([pts[0].slice()]);
+  return pts;
+}
+function distToPath(pt,p,maxD){
+  const pts=flatPts(p,0.5);
+  let best=Infinity;
+  for(let i=1;i<pts.length;i++){
+    const A=pts[i-1],B=pts[i],dx=B[0]-A[0],dy=B[1]-A[1],l2=dx*dx+dy*dy;
+    let d;
+    if(l2===0)d=dist(pt,A);
+    else{const t=clamp(((pt[0]-A[0])*dx+(pt[1]-A[1])*dy)/l2,0,1);
+      d=Math.hypot(pt[0]-(A[0]+t*dx),pt[1]-(A[1]+t*dy));}
+    if(d<best)best=d;
+    if(best<maxD*0.25)break;
+  }
+  return best;
+}
+function pathBBox(p){
+  const pts=flatPts(p,0.5);
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  for(const q of pts){x0=Math.min(x0,q[0]);y0=Math.min(y0,q[1]);x1=Math.max(x1,q[0]);y1=Math.max(y1,q[1]);}
+  return {x0,y0,x1,y1};
+}
+
+/* ---------------- State ---------------- */
+let state=null;              // project data (undoable)
+const imageStore={};         // id → dataURL (kept out of history snapshots)
+let view={zoom:1,tx:0,ty:0};
+let sel={paths:new Set(),image:null,nodes:new Set(),nodePath:null};
+let ui={tool:"draw",panelTab:"stroke",plotPreview:false,fingerDraw:true,
+  eraserMode:"stroke",showNodes:false};
+
+function defaultState(name="Untitled trace",w=210,h=297,margin=10){
+  return {
+    name,page:{w,h,margin,grid:10,gridMinor:5,showGrid:false,snap:false},
+    stroke:{width:0.4,smoothing:"medium",simplify:0.25,color:null,spacing:0.35,minLen:1.2,joinTol:2.5},
+    machine:{feed:2500,travel:6000,penUp:"M3 S90",penDown:"M3 S30",upDelay:0.25,downDelay:0.25,
+      home:true,precision:2,flipY:true},
+    layers:[{id:uid(),type:"vector",name:"Layer 1",color:"#1a1a1a",visible:true,locked:false,
+      opacity:1,pen:1,plot:true}],
+    activeLayer:null, paths:[], images:[]
+  };
+}
+
+/* ---------------- History ---------------- */
+const hist={undo:[],redo:[],max:60};
+function snapshot(){return JSON.stringify(state);}
+function pushHistory(){hist.undo.push(snapshot());if(hist.undo.length>hist.max)hist.undo.shift();
+  hist.redo.length=0;updateHistBtns();scheduleAutosave();}
+function undo(){if(!hist.undo.length)return;hist.redo.push(snapshot());
+  state=JSON.parse(hist.undo.pop());afterHistory("Undone");}
+function redo(){if(!hist.redo.length)return;hist.undo.push(snapshot());
+  state=JSON.parse(hist.redo.pop());afterHistory("Redone");}
+function afterHistory(msg){clearSel();renderAll();renderPanel();updateHistBtns();scheduleAutosave();toast(msg);}
+function updateHistBtns(){$("#btnUndo").disabled=!hist.undo.length;$("#btnRedo").disabled=!hist.redo.length;}
+
+/* ---------------- View / coordinates ---------------- */
+const svg=$("#svg"), wrap=$("#canvaswrap");
+function docFromScreen(x,y){const r=svg.getBoundingClientRect();
+  return [(x-r.left-view.tx)/view.zoom,(y-r.top-view.ty)/view.zoom];}
+function fitPage(pad=40){
+  const r=svg.getBoundingClientRect();
+  const z=Math.min((r.width-pad*2)/state.page.w,(r.height-pad*2)/state.page.h);
+  view.zoom=clamp(z,.02,80);
+  view.tx=(r.width-state.page.w*view.zoom)/2;
+  view.ty=(r.height-state.page.h*view.zoom)/2;
+  applyView();
+}
+function zoomAt(sx,sy,f){
+  const r=svg.getBoundingClientRect();
+  const nz=clamp(view.zoom*f,.02,80);f=nz/view.zoom;
+  view.tx=(sx-r.left)-((sx-r.left)-view.tx)*f;
+  view.ty=(sy-r.top)-((sy-r.top)-view.ty)*f;
+  view.zoom=nz;applyView();
+}
+function applyView(){
+  gWorld.setAttribute("transform",`translate(${view.tx} ${view.ty}) scale(${view.zoom})`);
+  $("#stZoom").textContent=Math.round(view.zoom*100/3.7795)+"%"; // % of real size @96dpi
+  renderOverlay();
+}
+
+/* ---------------- SVG scene ---------------- */
+let gWorld,gPage,gGrid,gImages,gPaths,gPlot,gOverlay,gLive;
+function buildScene(){
+  svg.innerHTML="";
+  gWorld=el("g",{},svg);
+  gPage=el("g",{},gWorld);
+  gImages=el("g",{},gWorld);
+  gGrid=el("g",{},gWorld);
+  gPaths=el("g",{},gWorld);
+  gLive=el("g",{},gWorld);
+  gPlot=el("g",{},gWorld);
+  gOverlay=el("g",{},gWorld);
+}
+function renderPage(){
+  gPage.innerHTML="";gGrid.innerHTML="";
+  const {w,h,margin}=state.page;
+  el("rect",{class:"papershadow",x:1.5,y:2.5,width:w,height:h},gPage);
+  el("rect",{class:"paper",x:0,y:0,width:w,height:h},gPage);
+  if(margin>0)el("rect",{class:"margin",x:margin,y:margin,width:w-2*margin,height:h-2*margin},gPage);
+  if(state.page.showGrid){
+    const mk=(step,cls)=>{let d="";
+      for(let x=step;x<w;x+=step)d+=`M${x} 0V${h}`;
+      for(let y=step;y<h;y+=step)d+=`M0 ${y}H${w}`;
+      if(d)el("path",{class:cls,d},gGrid);};
+    if(state.page.gridMinor>0)mk(state.page.gridMinor,"gridminor");
+    if(state.page.grid>0)mk(state.page.grid,"gridmajor");
+  }
+  $("#btnGrid").classList.toggle("on",state.page.showGrid);
+  $("#btnSnap").classList.toggle("on",state.page.snap);
+}
+function layerById(id){return state.layers.find(l=>l.id===id);}
+function activeLayer(){
+  let l=layerById(state.activeLayer);
+  if(!l||l.type!=="vector"){l=state.layers.find(x=>x.type==="vector");state.activeLayer=l?l.id:null;}
+  return l;
+}
+function renderImages(){
+  gImages.innerHTML="";
+  for(let i=state.layers.length-1;i>=0;i--){ // bottom of panel list renders first
+    const L=state.layers[i];
+    if(L.type!=="image"||!L.visible)continue;
+    const im=state.images.find(m=>m.id===L.imageId);if(!im)continue;
+    const src=imageStore[im.id];if(!src)continue;
+    const g=el("g",{transform:
+      `translate(${im.x} ${im.y}) rotate(${im.rot}) scale(${im.scale*(im.flipX?-1:1)} ${im.scale*(im.flipY?-1:1)})`},gImages);
+    const node=el("image",{x:-im.w0/2,y:-im.h0/2,width:im.w0,height:im.h0,
+      preserveAspectRatio:"none",opacity:L.opacity},g);
+    node.setAttribute("href",src);
+    let f="";
+    if(im.gray>0)f+=`grayscale(${im.gray}) `;
+    if(im.bright!==1)f+=`brightness(${im.bright}) `;
+    if(im.contrast!==1)f+=`contrast(${im.contrast}) `;
+    if(im.invert)f+="invert(1) ";
+    if(f)node.setAttribute("style",`filter:${f.trim()}`);
+    g.dataset.imageId=im.id;
+  }
+}
+function renderPaths(){
+  gPaths.innerHTML="";
+  for(let i=state.layers.length-1;i>=0;i--){
+    const L=state.layers[i];
+    if(L.type!=="vector"||!L.visible)continue;
+    const g=el("g",{opacity:L.opacity},gPaths);
+    for(const p of state.paths){
+      if(p.layer!==L.id)continue;
+      const isSel=sel.paths.has(p.id);
+      if(isSel)el("path",{class:"pathhalo",d:pathToD(p),
+        "stroke-width":(p.width||state.stroke.width)+2.4/view.zoom},g);
+      const e=el("path",{d:pathToD(p),fill:"none",stroke:L.color,
+        "stroke-width":Math.max(p.width||state.stroke.width, .12),
+        "stroke-linecap":"round","stroke-linejoin":"round"},g);
+      if(isSel)e.classList.add("pathsel");
+      e.dataset.pathId=p.id;
+    }
+  }
+  $("#stPaths").textContent=state.paths.length;
+  renderPlotPreview();renderOverlay();
+}
+function renderAll(){renderPage();renderImages();renderPaths();}
+
+/* ---------------- Overlay: selection box, nodes, marquee ---------------- */
+let marquee=null;
+function selBBox(){
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9,has=false;
+  for(const id of sel.paths){const p=state.paths.find(q=>q.id===id);if(!p)continue;
+    const b=pathBBox(p);x0=Math.min(x0,b.x0);y0=Math.min(y0,b.y0);
+    x1=Math.max(x1,b.x1);y1=Math.max(y1,b.y1);has=true;}
+  if(sel.image){const im=sel.image;
+    const hw=im.w0*im.scale/2,hh=im.h0*im.scale/2,r=Math.hypot(hw,hh);
+    x0=Math.min(x0,im.x-r);y0=Math.min(y0,im.y-r);x1=Math.max(x1,im.x+r);y1=Math.max(y1,im.y+r);has=true;}
+  return has?{x0,y0,x1,y1}:null;
+}
+function renderOverlay(){
+  gOverlay.innerHTML="";
+  const hs=9/view.zoom; // handle half-size
+  if(marquee){el("rect",{class:"marquee",x:Math.min(marquee.a[0],marquee.b[0]),
+    y:Math.min(marquee.a[1],marquee.b[1]),width:Math.abs(marquee.a[0]-marquee.b[0]),
+    height:Math.abs(marquee.a[1]-marquee.b[1])},gOverlay);}
+  const b=selBBox();
+  if(b&&(ui.tool==="select")){
+    el("rect",{class:"selbox",x:b.x0,y:b.y0,width:b.x1-b.x0,height:b.y1-b.y0},gOverlay);
+    const corners=[[b.x0,b.y0,"nw"],[b.x1,b.y0,"ne"],[b.x1,b.y1,"se"],[b.x0,b.y1,"sw"]];
+    for(const[cx,cy,tag]of corners){
+      const h=el("rect",{class:"handle",x:cx-hs,y:cy-hs,width:hs*2,height:hs*2,rx:hs*0.35},gOverlay);
+      h.dataset.handle=tag;
+    }
+    const cx=(b.x0+b.x1)/2, ry=b.y0-26/view.zoom;
+    el("line",{x1:cx,y1:b.y0,x2:cx,y2:ry,stroke:"var(--pen)","stroke-width":1,
+      "vector-effect":"non-scaling-stroke"},gOverlay);
+    const rot=el("circle",{class:"handle",cx:cx,cy:ry,r:hs},gOverlay);
+    rot.dataset.handle="rot";
+  }
+  // node editing
+  if(ui.tool==="node"&&sel.nodePath){
+    const p=state.paths.find(q=>q.id===sel.nodePath);
+    if(p){
+      el("path",{d:pathToD(p),fill:"none",stroke:"rgba(47,125,209,.4)",
+        "stroke-width":1,"vector-effect":"non-scaling-stroke"},gOverlay);
+      p.pts.forEach((pt,i)=>{
+        const n=el("circle",{class:"node"+(sel.nodes.has(i)?" sel":""),
+          cx:pt[0],cy:pt[1],r:5.5/view.zoom},gOverlay);
+        n.dataset.node=i;
+      });
+    }
+  }
+}
+
+/* ---------------- Plot preview & stats ---------------- */
+function orderedPlotPaths(){
+  const out=[];
+  for(const L of state.layers){
+    if(L.type!=="vector"||!L.plot||!L.visible)continue;
+    for(const p of state.paths)if(p.layer===L.id)out.push(p);
+  }
+  return out;
+}
+function plotStats(){
+  const paths=orderedPlotPaths();
+  let draw=0,travel=0,nodes=0,prev=[0,0];
+  for(const p of paths){
+    const f=flatPts(p);nodes+=p.pts.length;
+    draw+=pathLength(f);
+    travel+=dist(prev,f[0]);
+    prev=f[f.length-1];
+  }
+  return {draw,travel,nodes,count:paths.length};
+}
+function renderPlotPreview(){
+  gPlot.innerHTML="";
+  $("#stPlot").style.display=ui.plotPreview?"":"none";
+  $("#btnPlotPrev").classList.toggle("on",ui.plotPreview);
+  if(!ui.plotPreview)return;
+  const paths=orderedPlotPaths();
+  let prev=null,n=0;
+  for(const p of paths){
+    n++;
+    const f=flatPts(p);
+    if(prev)el("line",{class:"travel",x1:prev[0],y1:prev[1],x2:f[0][0],y2:f[0][1]},gPlot);
+    const r=7/view.zoom;
+    const g=el("g",{class:"ordbadge"},gPlot);
+    el("circle",{cx:f[0][0],cy:f[0][1],r},g);
+    const t=el("text",{x:f[0][0],y:f[0][1]},g);
+    t.textContent=n;t.setAttribute("style",`font-size:${9/view.zoom}px`);
+    el("circle",{class:"enddot",cx:f[f.length-1][0],cy:f[f.length-1][1],r:3.2/view.zoom},gPlot);
+    prev=f[f.length-1];
+  }
+  const s=plotStats();
+  $("#stDraw").textContent=Math.round(s.draw);
+  $("#stTravel").textContent=Math.round(s.travel);
+}
+
+/* ---------------- Path ordering / optimisation ---------------- */
+function optimizeOrder(perLayer=true){
+  pushHistory();
+  const groups=perLayer
+    ? state.layers.filter(l=>l.type==="vector").map(L=>state.paths.filter(p=>p.layer===L.id))
+    : [state.paths.slice()];
+  let result=[];
+  let cur=[0,0];
+  for(const grp of groups){
+    const remaining=grp.slice();
+    while(remaining.length){
+      let bi=0,bRev=false,bd=Infinity;
+      for(let i=0;i<remaining.length;i++){
+        const f=flatPts(remaining[i]);
+        const d0=dist(cur,f[0]),d1=dist(cur,f[f.length-1]);
+        if(d0<bd){bd=d0;bi=i;bRev=false;}
+        if(d1<bd){bd=d1;bi=i;bRev=true;}
+      }
+      const p=remaining.splice(bi,1)[0];
+      if(bRev&&!p.closed)p.pts.reverse();
+      const f=flatPts(p);cur=f[f.length-1];
+      result.push(p);
+    }
+  }
+  // keep non-vector-layer paths (shouldn't exist) then rebuild in layer order
+  state.paths=result;
+  renderPaths();
+  const s=plotStats();
+  toast(`Optimised — travel ${Math.round(s.travel)} mm`);
+}
+function reverseSelected(){
+  if(!sel.paths.size)return toast("Select paths first");
+  pushHistory();
+  for(const id of sel.paths){const p=state.paths.find(q=>q.id===id);if(p)p.pts.reverse();}
+  renderPaths();toast("Reversed");
+}
+function joinNearby(tol){
+  pushHistory();
+  let joined=0,changed=true;
+  while(changed){
+    changed=false;
+    outer:
+    for(let i=0;i<state.paths.length;i++){
+      const a=state.paths[i];if(a.closed)continue;
+      for(let j=0;j<state.paths.length;j++){
+        if(i===j)continue;const b=state.paths[j];
+        if(b.closed||a.layer!==b.layer)continue;
+        const aS=a.pts[0],aE=a.pts[a.pts.length-1],bS=b.pts[0],bE=b.pts[b.pts.length-1];
+        let merged=null;
+        if(dist(aE,bS)<=tol)merged=a.pts.concat(b.pts);
+        else if(dist(aE,bE)<=tol)merged=a.pts.concat(b.pts.slice().reverse());
+        else if(dist(aS,bS)<=tol)merged=a.pts.slice().reverse().concat(b.pts);
+        else if(dist(aS,bE)<=tol)merged=b.pts.concat(a.pts);
+        if(merged){
+          a.pts=merged;a.smooth=a.smooth||b.smooth;
+          state.paths.splice(j,1);joined++;changed=true;break outer;
+        }
+      }
+    }
+  }
+  renderPaths();
+  toast(joined?`Joined ${joined} path${joined>1?"s":""}`:"No endpoints within tolerance");
+}
+
+/* ---------------- Input / tools ---------------- */
+const pointers=new Map();
+let action=null;      // current gesture/tool action
+let penActive=false;  // stylus down → ignore touch (palm rejection)
+let lastTap=0, lastTapPos=[0,0], twoFingerTap=null;
+function tapHitsSomething(pt){
+  if(ui.tool==="node"&&sel.nodePath){
+    const p=state.paths.find(q=>q.id===sel.nodePath);
+    if(p){const r=10/view.zoom;
+      for(const q of p.pts)if(dist(pt,q)<r)return true;}
+  }
+  const b=selBBox();
+  if(b&&ui.tool==="select"){
+    const pad=14/view.zoom;
+    if(pt[0]>=b.x0-pad&&pt[0]<=b.x1+pad&&pt[1]>=b.y0-pad&&pt[1]<=b.y1+pad)return true;
+  }
+  return !!(hitPath(pt)||hitImage(pt));
+}
+
+function snapPt(pt){
+  if(!state.page.snap)return pt;
+  const s=state.page.gridMinor||state.page.grid||5;
+  return [Math.round(pt[0]/s)*s,Math.round(pt[1]/s)*s];
+}
+function setTool(t){
+  ui.tool=t;
+  if(t!=="node"){sel.nodePath=null;sel.nodes.clear();}
+  $$("#dock .dbtn").forEach(b=>b.classList.toggle("on",b.dataset.tool===t));
+  renderOverlay();
+  if(t==="draw"||t==="pen")showTab("stroke");
+  if(window.innerWidth<=820)$("#dock").classList.remove("open");
+}
+svg.addEventListener("contextmenu",e=>e.preventDefault());
+
+svg.addEventListener("pointerdown",e=>{
+  e.preventDefault();
+  svg.setPointerCapture(e.pointerId);
+  const isPen=e.pointerType==="pen", isTouch=e.pointerType==="touch";
+  if(isPen){
+    penActive=true;
+    // palm landed first and started a stroke — the Pencil wins, discard it
+    if(action&&action.kind==="stroke"&&action.byTouch)cancelStroke();
+    else if(action&&(action.kind==="pan"||action.kind==="marquee")&&pointers.size<2){
+      action=null;marquee=null;renderOverlay();
+    }
+    for(const [id,p] of [...pointers])if(p.type==="touch")pointers.delete(id);
+  }
+  if(isTouch&&penActive)return;                    // palm rejection
+  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY,type:e.pointerType,t:performance.now()});
+
+  // second finger → pinch (cancels drawing that a finger started)
+  if(pointers.size===2){
+    if(action&&action.kind==="stroke"&&action.byTouch)cancelStroke();
+    const [a,b]=[...pointers.values()];
+    action={kind:"pinch",d0:Math.hypot(a.x-b.x,a.y-b.y),z0:view.zoom,
+      c0:[(a.x+b.x)/2,(a.y+b.y)/2],tx0:view.tx,ty0:view.ty,moved:0};
+    twoFingerTap={t:performance.now()};
+    return;
+  }
+  if(pointers.size>2)return;
+
+  const pt=docFromScreen(e.clientX,e.clientY);
+  const now=performance.now();
+  const wantsDraw = isPen || e.pointerType==="mouse" || (isTouch&&ui.fingerDraw);
+  const t=ui.tool;
+  const drawingTool=(t==="draw"||t==="pen"||t==="line"||t==="rect"||t==="ellipse"||t==="erase");
+
+  // double-tap → fit page. Only when both taps land close together on empty paper,
+  // so it can never swallow a tap meant for a node, path or image.
+  if(isTouch&&now-lastTap<300&&!action&&!(wantsDraw&&drawingTool)
+     &&Math.hypot(e.clientX-lastTapPos[0],e.clientY-lastTapPos[1])<32
+     &&!tapHitsSomething(pt)){
+    fitPage();lastTap=0;return;
+  }
+  lastTap=now;lastTapPos=[e.clientX,e.clientY];
+
+  if(t==="pan"||(isTouch&&!ui.fingerDraw&&(t==="draw"||t==="pen"||t==="line"||t==="rect"||t==="ellipse"||t==="erase"))){
+    action={kind:"pan",sx:e.clientX,sy:e.clientY,tx0:view.tx,ty0:view.ty};
+    return;
+  }
+  if(t==="draw"&&wantsDraw){startStroke(pt,isTouch);return;}
+  if((t==="line"||t==="rect"||t==="ellipse")&&wantsDraw){
+    action={kind:"shape",shape:t,a:snapPt(pt),b:snapPt(pt)};return;
+  }
+  if(t==="pen"&&wantsDraw){penToolDown(pt);return;}
+  if(t==="erase"&&wantsDraw){action={kind:"erase",hit:false};eraseAt(pt);return;}
+  if(t==="node"){nodeDown(pt,e);return;}
+  if(t==="select"){selectDown(pt,e);return;}
+});
+
+svg.addEventListener("pointermove",e=>{
+  const rec=pointers.get(e.pointerId);
+  const pt=docFromScreen(e.clientX,e.clientY);
+  $("#stX").textContent=fmt(pt[0]);$("#stY").textContent=fmt(pt[1]);
+  if(!rec)return;
+  rec.x=e.clientX;rec.y=e.clientY;
+  if(!action)return;
+
+  if(action.kind==="pinch"&&pointers.size>=2){
+    const [a,b]=[...pointers.values()];
+    const d=Math.hypot(a.x-b.x,a.y-b.y),c=[(a.x+b.x)/2,(a.y+b.y)/2];
+    action.moved+=Math.abs(d-action.d0)+Math.hypot(c[0]-action.c0[0],c[1]-action.c0[1]);
+    const f=clamp(d/Math.max(action.d0,1),.05,20);
+    const nz=clamp(action.z0*f,.02,80);
+    const r=svg.getBoundingClientRect();
+    // keep pinch centre stationary, plus pan by centre delta
+    const cx0=action.c0[0]-r.left,cy0=action.c0[1]-r.top;
+    view.zoom=nz;
+    view.tx=(c[0]-r.left)-((cx0-action.tx0))*(nz/action.z0);
+    view.ty=(c[1]-r.top)-((cy0-action.ty0))*(nz/action.z0);
+    applyView();return;
+  }
+  if(action.kind==="pan"){
+    view.tx=action.tx0+(e.clientX-action.sx);
+    view.ty=action.ty0+(e.clientY-action.sy);
+    applyView();return;
+  }
+  if(action.kind==="stroke"){strokeMove(pt,e);return;}
+  if(action.kind==="shape"){action.b=snapPt(pt);drawShapePreview();return;}
+  if(action.kind==="erase"){eraseAt(pt);return;}
+  if(action.kind==="nodeDrag"){nodeDrag(pt);return;}
+  if(action.kind==="marquee"){marquee.b=pt;renderOverlay();return;}
+  if(action.kind==="move"){moveDrag(pt);return;}
+  if(action.kind==="scale"){scaleDrag(pt);return;}
+  if(action.kind==="rotate"){rotateDrag(pt);return;}
+  if(action.kind==="imgmove"){imgMoveDrag(pt);return;}
+});
+
+function endPointer(e){
+  pointers.delete(e.pointerId);
+  if(e.pointerType==="pen")penActive=false;
+
+  if(action&&action.kind==="pinch"){
+    if(pointers.size===0){
+      // two-finger tap → undo
+      if(twoFingerTap&&performance.now()-twoFingerTap.t<260&&action.moved<12)undo();
+      action=null;twoFingerTap=null;
+    }
+    return;
+  }
+  if(!action)return;
+  const pt=docFromScreen(e.clientX,e.clientY);
+  switch(action.kind){
+    case "stroke": finishStroke();break;
+    case "shape": finishShape();break;
+    case "erase": if(action.hit)renderPaths(); action=null;break;
+    case "nodeDrag": finishNodeDrag();break;
+    case "marquee": finishMarquee();break;
+    case "move": case "scale": case "rotate": case "imgmove":
+      renderPaths();renderImages();renderOverlay();renderPanel();action=null;break;
+    case "pan": action=null;break;
+    default:action=null;
+  }
+}
+svg.addEventListener("pointerup",endPointer);
+svg.addEventListener("pointercancel",e=>{
+  pointers.delete(e.pointerId);
+  if(e.pointerType==="pen")penActive=false;
+  if(action&&action.kind==="stroke")cancelStroke();
+  if(action&&action.kind==="nodeDrag")gLive.innerHTML="";
+  action=null;marquee=null;renderOverlay();
+});
+wrap.addEventListener("wheel",e=>{
+  e.preventDefault();
+  if(e.ctrlKey||e.metaKey)zoomAt(e.clientX,e.clientY,Math.exp(-e.deltaY*0.01));
+  else{view.tx-=e.deltaX;view.ty-=e.deltaY;applyView();}
+},{passive:false});
+
+/* ----- freehand stroke ----- */
+let liveEl=null;
+function smoothingAlpha(){ // light stabilisation only — never allowed to feel laggy
+  return {none:1,light:.7,medium:.5,strong:.35}[state.stroke.smoothing]??.5;
+}
+const SMOOTH_PROFILE={ // sigma = smoothing radius in mm; out = node spacing of the finished stroke
+  none:  {sigma:0,   out:0},
+  light: {sigma:0.6, out:0.9},
+  medium:{sigma:1.3, out:1.3},
+  strong:{sigma:2.6, out:1.8}
+};
+function gaussianSmooth(pts,h,sigma){ // binomial passes ≈ Gaussian of the requested radius
+  if(sigma<=0||pts.length<3)return pts;
+  const passes=clamp(Math.round(2*(sigma/h)*(sigma/h)),1,600);
+  let p=pts;
+  for(let k=0;k<passes;k++){
+    const n=p.map(q=>q.slice());
+    for(let i=1;i<p.length-1;i++){
+      n[i][0]=(p[i-1][0]+2*p[i][0]+p[i+1][0])/4;
+      n[i][1]=(p[i-1][1]+2*p[i][1]+p[i+1][1])/4;
+    }
+    p=n;
+  }
+  return p;
+}
+function blendJunction(pts,idx,sigma,outSpacing){ // re-smooth only a window around a join point
+  const W=Math.max(3,sigma*2.5); // mm each side of the junction
+  let a=idx,acc=0;
+  while(a>0&&acc<W){acc+=dist(pts[a-1],pts[a]);a--;}
+  let b=idx;acc=0;
+  while(b<pts.length-1&&acc<W){acc+=dist(pts[b],pts[b+1]);b++;}
+  const seg=dedupe(pts.slice(a,b+1));
+  if(seg.length<3)return pts;
+  const h=0.3;
+  let s=resampleUniform(seg,h);
+  s=gaussianSmooth(s,h,Math.max(sigma,0.8));
+  s=resampleUniform(s,Math.max(outSpacing,0.8));
+  return pts.slice(0,a).concat(s,pts.slice(b+1));
+}
+function startStroke(pt,byTouch){
+  const L=activeLayer();
+  if(!L){toast("Add a vector layer first");return;}
+  if(L.locked){toast(`“${L.name}” is locked`);return;}
+  action={kind:"stroke",raw:[pt.slice()],ema:pt.slice(),live:[pt.slice()],cur:pt.slice(),byTouch};
+  liveEl=el("path",{fill:"none",stroke:L.color,"stroke-width":state.stroke.width,
+    "stroke-linecap":"round","stroke-linejoin":"round",opacity:.9},gLive);
+}
+function strokeMove(pt,e){
+  const s=action,a=smoothingAlpha();
+  // pull every high-rate sample the OS coalesced into this event (Apple Pencil ≈240 Hz)
+  let samples=null;
+  if(e&&typeof e.getCoalescedEvents==="function"){
+    const ce=e.getCoalescedEvents();
+    if(ce&&ce.length)samples=ce.map(ev=>docFromScreen(ev.clientX,ev.clientY));
+  }
+  if(!samples)samples=[pt];
+  const rawGap=Math.max(0.1,state.stroke.spacing*0.35);
+  for(const q of samples){
+    s.cur=q.slice();
+    if(dist(s.raw[s.raw.length-1],q)>=rawGap)s.raw.push(q.slice());
+    s.ema=[s.ema[0]+(q[0]-s.ema[0])*a, s.ema[1]+(q[1]-s.ema[1])*a];
+    if(dist(s.live[s.live.length-1],s.ema)>=state.stroke.spacing)s.live.push(s.ema.slice());
+  }
+  // live preview: stabilised line that always catches up to the actual pointer — no lag
+  let d=`M${s.live[0][0]} ${s.live[0][1]}`;
+  for(let i=1;i<s.live.length;i++)d+=`L${s.live[i][0]} ${s.live[i][1]}`;
+  d+=`L${s.cur[0]} ${s.cur[1]}`;
+  liveEl.setAttribute("d",d);
+}
+function cancelStroke(){if(liveEl)liveEl.remove();liveEl=null;action=null;}
+function finishStroke(){
+  const s=action;action=null;
+  if(liveEl){liveEl.remove();liveEl=null;}
+  let raw=s.raw;
+  if(dist(raw[raw.length-1],s.cur)>0.01)raw.push(s.cur.slice());
+  if(raw.length<2||pathLength(raw)<state.stroke.minLen)return; // ignore accidental marks
+  pushHistory();
+  // pipeline: uniform resample → Gaussian smooth (radius in mm) → even output spacing → gentle RDP
+  const prof=SMOOTH_PROFILE[state.stroke.smoothing]||SMOOTH_PROFILE.medium;
+  let pts;
+  if(prof.sigma>0){
+    const h=0.3;
+    pts=resampleUniform(dedupe(raw),h);
+    pts=gaussianSmooth(pts,h,prof.sigma);
+    pts=resampleUniform(pts,prof.out);
+    // gentle simplification only — heavy RDP would make node spacing uneven again
+    pts=rdp(pts,Math.min(Math.max(0.02,state.stroke.simplify),prof.out*0.12));
+  }else{
+    pts=rdp(dedupe(raw),Math.max(0.02,state.stroke.simplify));
+  }
+  const closed=dist(pts[0],pts[pts.length-1])<2.5&&pathLength(pts)>10;
+  if(closed)pts=pts.slice(0,-1);
+  // auto-continue: if this stroke starts near an open endpoint on the active layer, extend that path
+  const jt=state.stroke.joinTol??2.5;
+  if(!closed&&jt>0){
+    const L=activeLayer();
+    let best=null,bd=jt,atStart=false;
+    for(const q of state.paths){
+      if(q.layer!==L.id||q.closed||q.pts.length<2)continue;
+      const dE=dist(pts[0],q.pts[q.pts.length-1]);
+      const dS=dist(pts[0],q.pts[0]);
+      if(dE<bd){bd=dE;best=q;atStart=false;}
+      if(dS<bd){bd=dS;best=q;atStart=true;}
+    }
+    if(best){
+      if(atStart)best.pts.reverse();       // walk in from the near end
+      const jIdx=best.pts.length-1;
+      best.pts=best.pts.concat(pts);
+      if(prof.sigma>0)best.pts=blendJunction(best.pts,jIdx,prof.sigma,prof.out);
+      best.smooth=best.smooth||state.stroke.smoothing!=="none";
+      // if the extended line now meets its own start, close the loop
+      if(best.pts.length>4&&dist(best.pts[0],best.pts[best.pts.length-1])<jt){
+        best.pts=best.pts.slice(0,-1);best.closed=true;
+      }
+      renderPaths();
+      toast("Continued previous line");
+      return;
+    }
+  }
+  state.paths.push({id:uid(),layer:activeLayer().id,pts,closed,
+    smooth:state.stroke.smoothing!=="none",width:state.stroke.width});
+  renderPaths();
+}
+
+/* ----- shape tools ----- */
+function shapePts(shape,a,b){
+  const x0=Math.min(a[0],b[0]),y0=Math.min(a[1],b[1]),x1=Math.max(a[0],b[0]),y1=Math.max(a[1],b[1]);
+  if(shape==="line")return {pts:[a.slice(),b.slice()],closed:false,smooth:false};
+  if(shape==="rect")return {pts:[[x0,y0],[x1,y0],[x1,y1],[x0,y1]],closed:true,smooth:false};
+  const cx=(x0+x1)/2,cy=(y0+y1)/2,rx=(x1-x0)/2,ry=(y1-y0)/2;
+  const n=clamp(Math.round(Math.PI*(rx+ry)/1.2),24,180),pts=[];
+  for(let i=0;i<n;i++){const t=i/n*Math.PI*2;pts.push([cx+Math.cos(t)*rx,cy+Math.sin(t)*ry]);}
+  return {pts,closed:true,smooth:true};
+}
+function drawShapePreview(){
+  gLive.innerHTML="";
+  const s=shapePts(action.shape,action.a,action.b);
+  el("path",{d:pathToD({...s}),fill:"none",stroke:activeLayer()?.color||"#333",
+    "stroke-width":state.stroke.width,opacity:.85},gLive);
+}
+function finishShape(){
+  const {shape,a,b}=action;action=null;gLive.innerHTML="";
+  if(dist(a,b)<1)return;
+  const L=activeLayer();if(!L||L.locked){toast("Layer locked");return;}
+  pushHistory();
+  const s=shapePts(shape,a,b);
+  state.paths.push({id:uid(),layer:L.id,...s,width:state.stroke.width});
+  renderPaths();
+}
+
+/* ----- pen (polyline click) tool ----- */
+let penPath=null;
+function penToolDown(pt){
+  pt=snapPt(pt);
+  const L=activeLayer();if(!L||L.locked)return toast("Layer locked");
+  if(!penPath){
+    // snap to another open endpoint to continue? keep simple: fresh path
+    penPath={id:uid(),layer:L.id,pts:[pt],closed:false,smooth:false,width:state.stroke.width};
+    toast("Pen: tap to add points · tap first point to close · Esc/✓ to finish");
+  }else{
+    if(penPath.pts.length>2&&dist(pt,penPath.pts[0])<6/view.zoom){penPath.closed=true;finishPen();return;}
+    penPath.pts.push(pt);
+  }
+  drawPenPreview();
+}
+function drawPenPreview(){
+  gLive.innerHTML="";
+  if(!penPath)return;
+  el("path",{d:pathToD(penPath),fill:"none",stroke:activeLayer()?.color||"#333",
+    "stroke-width":state.stroke.width,opacity:.85},gLive);
+  for(const p of penPath.pts)
+    el("circle",{cx:p[0],cy:p[1],r:4/view.zoom,class:"node"},gLive);
+}
+function finishPen(){
+  if(!penPath){return;}
+  gLive.innerHTML="";
+  if(penPath.pts.length>=2){pushHistory();state.paths.push(penPath);renderPaths();}
+  penPath=null;
+}
+
+/* ----- eraser ----- */
+function eraseAt(pt){
+  const r=8/view.zoom;
+  for(let i=state.paths.length-1;i>=0;i--){
+    const p=state.paths[i],L=layerById(p.layer);
+    if(!L||L.locked||!L.visible)continue;
+    if(distToPath(pt,p,r)<=r){
+      if(!action.hit){pushHistory();action.hit=true;}
+      if(ui.eraserMode==="stroke"){
+        state.paths.splice(i,1);sel.paths.delete(p.id);
+      }else{ // segment erase: remove nearby pts, split runs
+        const keepRuns=[];let run=[];
+        for(const q of p.pts){
+          if(dist(q,pt)>r)run.push(q);
+          else{if(run.length>1)keepRuns.push(run);run=[];}
+        }
+        if(run.length>1)keepRuns.push(run);
+        state.paths.splice(i,1);sel.paths.delete(p.id);
+        for(const rn of keepRuns)
+          state.paths.splice(i,0,{id:uid(),layer:p.layer,pts:rn,closed:false,smooth:p.smooth,width:p.width});
+      }
+      renderPaths();
+    }
+  }
+}
+
+/* ----- selection tool ----- */
+function hitPath(pt){
+  const r=7/view.zoom;
+  let best=null,bd=r;
+  for(const p of state.paths){
+    const L=layerById(p.layer);
+    if(!L||!L.visible||L.locked)continue;
+    const d=distToPath(pt,p,r);
+    if(d<bd){bd=d;best=p;}
+  }
+  return best;
+}
+function hitImage(pt){
+  for(const L of state.layers){
+    if(L.type!=="image"||!L.visible||L.locked)continue;
+    const im=state.images.find(m=>m.id===L.imageId);if(!im)continue;
+    // transform point into image space
+    const c=Math.cos(-im.rot*Math.PI/180),s=Math.sin(-im.rot*Math.PI/180);
+    let dx=pt[0]-im.x,dy=pt[1]-im.y;
+    let lx=(dx*c-dy*s)/(im.scale*(im.flipX?-1:1)), ly=(dx*s+dy*c)/(im.scale*(im.flipY?-1:1));
+    if(Math.abs(lx)<=im.w0/2&&Math.abs(ly)<=im.h0/2)return im;
+  }
+  return null;
+}
+function selectDown(pt,e){
+  // handles first
+  const b=selBBox();
+  if(b){
+    const hs=12/view.zoom;
+    const corners={nw:[b.x0,b.y0],ne:[b.x1,b.y0],se:[b.x1,b.y1],sw:[b.x0,b.y1]};
+    for(const tag in corners){
+      if(dist(pt,corners[tag])<hs){
+        pushHistory();
+        const anchor=corners[{nw:"se",ne:"sw",se:"nw",sw:"ne"}[tag]];
+        action={kind:"scale",anchor,start:pt.slice(),
+          d0:Math.max(dist(pt,anchor),.001),orig:captureSel()};
+        return;
+      }
+    }
+    const cx=(b.x0+b.x1)/2, ry=b.y0-26/view.zoom;
+    if(dist(pt,[cx,ry])<hs){
+      pushHistory();
+      action={kind:"rotate",center:[(b.x0+b.x1)/2,(b.y0+b.y1)/2],
+        a0:Math.atan2(pt[1]-(b.y0+b.y1)/2,pt[0]-(b.x0+b.x1)/2),orig:captureSel()};
+      return;
+    }
+    if(pt[0]>=b.x0&&pt[0]<=b.x1&&pt[1]>=b.y0&&pt[1]<=b.y1&&(sel.paths.size||sel.image)){
+      pushHistory();
+      action={kind:sel.image&&!sel.paths.size?"imgmove":"move",start:pt.slice(),orig:captureSel()};
+      return;
+    }
+  }
+  const p=hitPath(pt);
+  if(p){
+    if(e.shiftKey){sel.paths.has(p.id)?sel.paths.delete(p.id):sel.paths.add(p.id);}
+    else if(!sel.paths.has(p.id)){sel.paths.clear();sel.image=null;sel.paths.add(p.id);}
+    pushHistory();
+    action={kind:"move",start:pt.slice(),orig:captureSel()};
+    renderPaths();showTab("object",true);return;
+  }
+  const im=hitImage(pt);
+  if(im){
+    sel.paths.clear();sel.image=im;
+    pushHistory();
+    action={kind:"imgmove",start:pt.slice(),orig:{ix:im.x,iy:im.y}};
+    renderOverlay();showTab("object",true);return;
+  }
+  // empty → marquee
+  clearSel();renderPaths();
+  marquee={a:pt.slice(),b:pt.slice()};
+  action={kind:"marquee"};
+}
+function captureSel(){
+  const o={paths:{},ix:0,iy:0,iscale:1,irot:0};
+  for(const id of sel.paths){const p=state.paths.find(q=>q.id===id);
+    if(p)o.paths[id]=p.pts.map(q=>q.slice());}
+  if(sel.image){o.ix=sel.image.x;o.iy=sel.image.y;o.iscale=sel.image.scale;o.irot=sel.image.rot;}
+  return o;
+}
+function moveDrag(pt){
+  const dx=pt[0]-action.start[0],dy=pt[1]-action.start[1];
+  for(const id in action.orig.paths){
+    const p=state.paths.find(q=>q.id===id);if(!p)continue;
+    p.pts=action.orig.paths[id].map(q=>[q[0]+dx,q[1]+dy]);
+  }
+  if(sel.image){sel.image.x=action.orig.ix+dx;sel.image.y=action.orig.iy+dy;renderImages();}
+  renderPaths();
+}
+function imgMoveDrag(pt){
+  sel.image.x=action.orig.ix+(pt[0]-action.start[0]);
+  sel.image.y=action.orig.iy+(pt[1]-action.start[1]);
+  renderImages();renderOverlay();
+}
+function scaleDrag(pt){
+  const f=clamp(dist(pt,action.anchor)/action.d0,.02,50),a=action.anchor;
+  for(const id in action.orig.paths){
+    const p=state.paths.find(q=>q.id===id);if(!p)continue;
+    p.pts=action.orig.paths[id].map(q=>[a[0]+(q[0]-a[0])*f,a[1]+(q[1]-a[1])*f]);
+  }
+  if(sel.image){
+    sel.image.scale=action.orig.iscale*f;
+    sel.image.x=a[0]+(action.orig.ix-a[0])*f;
+    sel.image.y=a[1]+(action.orig.iy-a[1])*f;
+    renderImages();
+  }
+  renderPaths();
+}
+function rotateDrag(pt){
+  const c=action.center;
+  const ang=Math.atan2(pt[1]-c[1],pt[0]-c[0])-action.a0;
+  const cs=Math.cos(ang),sn=Math.sin(ang);
+  for(const id in action.orig.paths){
+    const p=state.paths.find(q=>q.id===id);if(!p)continue;
+    p.pts=action.orig.paths[id].map(q=>{
+      const dx=q[0]-c[0],dy=q[1]-c[1];
+      return [c[0]+dx*cs-dy*sn, c[1]+dx*sn+dy*cs];
+    });
+  }
+  if(sel.image){
+    sel.image.rot=action.orig.irot+ang*180/Math.PI;
+    const dx=action.orig.ix-c[0],dy=action.orig.iy-c[1];
+    sel.image.x=c[0]+dx*cs-dy*sn;sel.image.y=c[1]+dx*sn+dy*cs;
+    renderImages();
+  }
+  renderPaths();
+}
+function finishMarquee(){
+  const m=marquee;marquee=null;action=null;
+  if(!m)return;
+  const x0=Math.min(m.a[0],m.b[0]),y0=Math.min(m.a[1],m.b[1]),
+        x1=Math.max(m.a[0],m.b[0]),y1=Math.max(m.a[1],m.b[1]);
+  if((x1-x0)>2||(y1-y0)>2){
+    for(const p of state.paths){
+      const L=layerById(p.layer);if(!L||!L.visible||L.locked)continue;
+      const b=pathBBox(p);
+      if(b.x0>=x0&&b.x1<=x1&&b.y0>=y0&&b.y1<=y1)sel.paths.add(p.id);
+    }
+    if(sel.paths.size)showTab("object",true);
+  }
+  renderPaths();
+}
+function clearSel(){sel.paths.clear();sel.image=null;sel.nodes.clear();sel.nodePath=null;}
+function deleteSelection(){
+  if(!sel.paths.size&&!sel.image)return;
+  pushHistory();
+  state.paths=state.paths.filter(p=>!sel.paths.has(p.id));
+  if(sel.image){
+    state.layers=state.layers.filter(l=>l.imageId!==sel.image.id);
+    state.images=state.images.filter(m=>m.id!==sel.image.id);
+  }
+  clearSel();renderAll();renderPanel();
+}
+function duplicateSelection(){
+  if(!sel.paths.size)return;
+  pushHistory();
+  const fresh=new Set();
+  for(const id of sel.paths){
+    const p=state.paths.find(q=>q.id===id);if(!p)continue;
+    const c={...p,id:uid(),pts:p.pts.map(q=>[q[0]+5,q[1]+5])};
+    state.paths.push(c);fresh.add(c.id);
+  }
+  sel.paths=fresh;renderPaths();
+}
+
+/* ----- node editing ----- */
+function nodeDown(pt,e){
+  const p=sel.nodePath?state.paths.find(q=>q.id===sel.nodePath):null;
+  if(p){
+    const r=10/view.zoom;
+    // existing node?
+    for(let i=0;i<p.pts.length;i++){
+      if(dist(pt,p.pts[i])<r){
+        if(e.shiftKey){sel.nodes.has(i)?sel.nodes.delete(i):sel.nodes.add(i);}
+        else if(!sel.nodes.has(i)){sel.nodes.clear();sel.nodes.add(i);}
+        pushHistory();
+        action={kind:"nodeDrag",path:p,idx:i,start:pt.slice(),
+          orig:p.pts.map(q=>q.slice())};
+        renderOverlay();return;
+      }
+    }
+    // insert node on a segment
+    if(distToPath(pt,p,r)<r){
+      pushHistory();
+      let bi=1,bd=Infinity;
+      for(let i=1;i<p.pts.length;i++){
+        const A=p.pts[i-1],B=p.pts[i],dx=B[0]-A[0],dy=B[1]-A[1],l2=dx*dx+dy*dy||1;
+        const t=clamp(((pt[0]-A[0])*dx+(pt[1]-A[1])*dy)/l2,0,1);
+        const d=Math.hypot(pt[0]-(A[0]+t*dx),pt[1]-(A[1]+t*dy));
+        if(d<bd){bd=d;bi=i;}
+      }
+      p.pts.splice(bi,0,snapPt(pt));
+      sel.nodes.clear();sel.nodes.add(bi);
+      action={kind:"nodeDrag",path:p,idx:bi,start:pt.slice(),orig:p.pts.map(q=>q.slice())};
+      renderPaths();return;
+    }
+  }
+  // select a different path for node editing
+  const hit=hitPath(pt);
+  sel.nodePath=hit?hit.id:null;sel.nodes.clear();
+  renderOverlay();
+  if(hit)showTab("object",true);
+}
+function nodeDrag(pt){
+  const {path,idx,start,orig}=action;
+  const dx=pt[0]-start[0],dy=pt[1]-start[1];
+  const move=sel.nodes.size?sel.nodes:[idx];
+  for(const i of move)path.pts[i]=snapPt([orig[i][0]+dx,orig[i][1]+dy]);
+  renderPaths();
+  // live hint: ring every endpoint the dragged endpoint could join
+  gLive.innerHTML="";
+  if(move.length===1||sel.nodes.size<=1)
+    for(const c of joinCandidates(path,idx))
+      el("circle",{cx:c[0],cy:c[1],r:9/view.zoom,fill:"none",stroke:"var(--pen)",
+        "stroke-width":2,"vector-effect":"non-scaling-stroke"},gLive);
+}
+function joinTolNow(){const jt=state.stroke.joinTol??2.5;return jt>0?Math.max(jt,6/view.zoom):0;}
+function joinCandidates(p,idx){
+  const tol=joinTolNow();
+  if(!tol||p.closed||(idx!==0&&idx!==p.pts.length-1))return [];
+  const dragged=p.pts[idx],out=[];
+  const oi=idx===0?p.pts.length-1:0;
+  if(p.pts.length>3&&dist(dragged,p.pts[oi])<=tol)out.push(p.pts[oi]);
+  for(const q of state.paths){
+    if(q===p||q.closed||q.pts.length<2||q.layer!==p.layer)continue;
+    const L=layerById(q.layer);if(!L||L.locked||!L.visible)continue;
+    if(dist(dragged,q.pts[0])<=tol)out.push(q.pts[0]);
+    if(dist(dragged,q.pts[q.pts.length-1])<=tol)out.push(q.pts[q.pts.length-1]);
+  }
+  return out;
+}
+function finishNodeDrag(){
+  const a=action;action=null;gLive.innerHTML="";
+  const p=a.path;let idx=a.idx;
+  if(!p||!p.pts||p.pts.length<2){renderPaths();return;}
+  // 1) dropped onto an adjacent node → merge the duplicates
+  const mergeTol=Math.max(0.35,3/view.zoom);
+  for(const i of [idx-1,idx+1]){
+    if(i<0||i>=p.pts.length||p.pts.length<=2)continue;
+    if(dist(p.pts[idx],p.pts[i])<=mergeTol){
+      p.pts.splice(i,1);
+      if(i<idx)idx--;
+      sel.nodes.clear();sel.nodes.add(idx);
+      toast("Merged nodes");break;
+    }
+  }
+  // 2) endpoint dropped near another endpoint → close loop or join paths
+  const tol=joinTolNow();
+  if(tol&&!p.closed&&(idx===0||idx===p.pts.length-1)){
+    const dragged=p.pts[idx];
+    const oi=idx===0?p.pts.length-1:0;
+    if(p.pts.length>3&&dist(dragged,p.pts[oi])<=tol){
+      const mid=[(dragged[0]+p.pts[oi][0])/2,(dragged[1]+p.pts[oi][1])/2];
+      p.pts[oi]=mid;p.pts.splice(idx,1);p.closed=true;
+      sel.nodes.clear();renderPaths();toast("Closed loop");return;
+    }
+    let best=null,bd=tol,atStart=false;
+    for(const q of state.paths){
+      if(q===p||q.closed||q.pts.length<2||q.layer!==p.layer)continue;
+      const L=layerById(q.layer);if(!L||L.locked||!L.visible)continue;
+      const dS=dist(dragged,q.pts[0]),dE=dist(dragged,q.pts[q.pts.length-1]);
+      if(dS<bd){bd=dS;best=q;atStart=true;}
+      if(dE<bd){bd=dE;best=q;atStart=false;}
+    }
+    if(best){
+      const q=best;
+      let A,B; // A ends at the junction, B starts at it
+      if(idx===p.pts.length-1){A=p.pts.slice();B=atStart?q.pts.slice():q.pts.slice().reverse();}
+      else{A=atStart?q.pts.slice().reverse():q.pts.slice();B=p.pts.slice();}
+      const mid=[(A[A.length-1][0]+B[0][0])/2,(A[A.length-1][1]+B[0][1])/2];
+      A[A.length-1]=mid;
+      const j=A.length-1;
+      let pts=A.concat(B.slice(1));
+      const prof=SMOOTH_PROFILE[state.stroke.smoothing]||SMOOTH_PROFILE.medium;
+      if((p.smooth||q.smooth)&&prof.sigma>0)pts=blendJunction(pts,j,prof.sigma,prof.out);
+      p.pts=pts;p.smooth=p.smooth||q.smooth;
+      state.paths=state.paths.filter(x=>x!==q);
+      sel.nodePath=p.id;sel.nodes.clear();
+      renderPaths();toast("Joined paths");return;
+    }
+  }
+  renderPaths();
+}
+function deleteNodes(){
+  const p=state.paths.find(q=>q.id===sel.nodePath);
+  if(!p||!sel.nodes.size)return;
+  pushHistory();
+  p.pts=p.pts.filter((_,i)=>!sel.nodes.has(i));
+  sel.nodes.clear();
+  if(p.pts.length<2)state.paths=state.paths.filter(q=>q.id!==p.id);
+  renderPaths();
+}
+function simplifyPaths(ids,tol){
+  pushHistory();let removed=0;
+  for(const id of ids){
+    const p=state.paths.find(q=>q.id===id);if(!p)continue;
+    const before=p.pts.length;
+    p.pts=rdp(p.pts,tol);removed+=before-p.pts.length;
+  }
+  renderPaths();toast(`Removed ${removed} node${removed===1?"":"s"}`);
+}
+
+/* ---------------- Tool dock ---------------- */
+const TOOLS=[
+  ["select","Select",'<path d="M5 3l14 8-6.5 1.5L15 19l-2.6 1.2-2.5-6.6L5 17z"/>'],
+  ["draw","Draw",'<path d="M12 19l7-7a3.5 3.5 0 0 0-5-5l-7 7L4 20l6-1z"/><path d="M13.5 6.5l4 4"/>'],
+  ["pen","Pen",'<path d="M4 20l4-1 11-11a2.1 2.1 0 0 0-3-3L5 16z"/><circle cx="18" cy="4" r="1.4"/><circle cx="5" cy="17" r="1.4"/>'],
+  ["line","Line",'<path d="M5 19L19 5"/><circle cx="5" cy="19" r="1.6"/><circle cx="19" cy="5" r="1.6"/>'],
+  ["rect","Rect",'<rect x="4" y="6" width="16" height="12" rx="1"/>'],
+  ["ellipse","Ellipse",'<ellipse cx="12" cy="12" rx="8" ry="6"/>'],
+  null,
+  ["node","Nodes",'<path d="M5 17c4-9 10-9 14-2"/><rect x="3" y="15" width="4" height="4"/><rect x="17" y="11" width="4" height="4"/><rect x="10" y="8" width="4" height="4"/>'],
+  ["erase","Erase",'<path d="M7 20h10"/><path d="M5 15l8-8a2 2 0 0 1 3 0l3 3a2 2 0 0 1 0 3l-5 5H9z"/>'],
+  null,
+  ["pan","Pan",'<path d="M12 3v18M3 12h18"/><path d="M12 3l-2.5 2.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/>'],
+];
+function buildDock(){
+  const dock=$("#dock");dock.innerHTML="";
+  for(const t of TOOLS){
+    if(!t){const s=document.createElement("div");s.className="dsep";dock.appendChild(s);continue;}
+    const b=document.createElement("button");
+    b.className="dbtn";b.dataset.tool=t[0];
+    b.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${t[2]}</svg><span>${t[1]}</span>`;
+    b.addEventListener("click",()=>{
+      if(t[0]!=="pen"&&penPath)finishPen();
+      setTool(t[0]);
+    });
+    dock.appendChild(b);
+  }
+}
+
+/* ---------------- Right panel ---------------- */
+function showTab(t,reveal){
+  ui.panelTab=t;
+  $$("#paneltabs button").forEach(b=>b.classList.toggle("on",b.dataset.tab===t));
+  renderPanel();
+  // deliberate acts (selecting, importing) surface the panel; switching tools must not
+  if(reveal&&tier()!=="A"&&!panelVisible())togglePanel(true);
+}
+$$("#paneltabs button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
+
+function slider(label,val,min,max,step,fn,fmtFn){
+  const d=document.createElement("div");d.className="row";
+  const v=fmtFn?fmtFn(val):fmt(val,2);
+  d.innerHTML=`<label>${label}</label><input type="range" min="${min}" max="${max}" step="${step}" value="${val}"><span class="rv">${v}</span>`;
+  const inp=d.querySelector("input"),rv=d.querySelector(".rv");
+  inp.addEventListener("input",()=>{rv.textContent=fmtFn?fmtFn(+inp.value):fmt(+inp.value,2);fn(+inp.value);});
+  return d;
+}
+function renderPanel(){
+  const body=$("#panelbody");body.innerHTML="";
+  const add=h=>{if(typeof h==="string"){const d=document.createElement("div");d.innerHTML=h;
+    while(d.firstChild)body.appendChild(d.firstChild);}else body.appendChild(h);};
+
+  if(ui.panelTab==="stroke"){
+    add(`<div class="sect"><h3>Brush</h3></div>`);
+    add(slider("Width mm",state.stroke.width,0.1,3,0.05,v=>{state.stroke.width=v;renderPaths();}));
+    const sm=document.createElement("div");sm.className="row";
+    sm.innerHTML=`<label>Smoothing</label><select>
+      <option value="none">None</option><option value="light">Light</option>
+      <option value="medium">Medium</option><option value="strong">Strong</option></select>`;
+    sm.querySelector("select").value=state.stroke.smoothing;
+    sm.querySelector("select").addEventListener("change",e=>state.stroke.smoothing=e.target.value);
+    add(sm);
+    add(slider("Simplify mm",state.stroke.simplify,0.02,1,0.01,v=>state.stroke.simplify=v));
+    add(slider("Point spacing",state.stroke.spacing,0.1,2,0.05,v=>state.stroke.spacing=v));
+    add(slider("Ignore < mm",state.stroke.minLen,0,5,0.1,v=>state.stroke.minLen=v));
+    add(slider("Auto-join ≤ mm",state.stroke.joinTol??2.5,0,6,0.1,v=>state.stroke.joinTol=v));
+    add(`<p class="hint">Start a stroke within the auto-join distance of a line's end and it continues that line — the connection is blended smooth, and meeting your own start point closes the loop. Set it to 0 to switch continuation off. The live line always sticks to your fingertip; smoothing is applied on lift.</p>`);
+    add(`<div class="sect" style="margin-top:14px"><h3>Input</h3></div>`);
+    const fd=document.createElement("div");fd.className="btnrow";
+    const fb=document.createElement("button");
+    fb.className="sbtn"+(ui.fingerDraw?" on":"");fb.textContent="Finger drawing "+(ui.fingerDraw?"on":"off");
+    fb.addEventListener("click",()=>{ui.fingerDraw=!ui.fingerDraw;renderPanel();
+      toast(ui.fingerDraw?"Fingers draw — two fingers still pan/zoom":"Fingers pan · Pencil/mouse draws");});
+    fd.appendChild(fb);add(fd);
+    add(`<p class="hint">One finger draws; two fingers always pan and zoom. Turn finger drawing off if you'd rather draw only with the Pencil and pan with one finger. The palm is ignored while the Pencil is down.</p>`);
+  }
+
+  if(ui.panelTab==="object"){
+    if(sel.image){
+      const im=sel.image,L=state.layers.find(l=>l.imageId===im.id);
+      add(`<div class="sect"><h3>Image · ${L?L.name:""}</h3></div>`);
+      add(slider("Opacity",L.opacity,0.05,1,0.01,v=>{L.opacity=v;renderImages();}));
+      add(slider("Greyscale",im.gray,0,1,0.01,v=>{im.gray=v;renderImages();}));
+      add(slider("Brightness",im.bright,0.3,2.2,0.01,v=>{im.bright=v;renderImages();}));
+      add(slider("Contrast",im.contrast,0.3,2,0.01,v=>{im.contrast=v;renderImages();}));
+      add(slider("Rotate °",im.rot,-180,180,1,v=>{im.rot=v;renderImages();renderOverlay();},v=>fmt(v,0)));
+      const r1=document.createElement("div");r1.className="btnrow";
+      const mk=(txt,fn,cls="sbtn")=>{const b=document.createElement("button");b.className=cls;
+        b.textContent=txt;b.addEventListener("click",fn);r1.appendChild(b);};
+      mk("Flip H",()=>{pushHistory();im.flipX=!im.flipX;renderImages();});
+      mk("Flip V",()=>{pushHistory();im.flipY=!im.flipY;renderImages();});
+      mk("Fit page",()=>{pushHistory();fitImageToPage(im);renderImages();renderOverlay();});
+      mk("Invert",()=>{pushHistory();im.invert=!im.invert;renderImages();});
+      add(r1);
+      const r2=document.createElement("div");r2.className="btnrow";
+      const mk2=(txt,fn,cls="sbtn")=>{const b=document.createElement("button");b.className=cls;
+        b.textContent=txt;b.addEventListener("click",fn);r2.appendChild(b);};
+      mk2("Trace mode",()=>{pushHistory();im.gray=1;im.bright=1.35;L.opacity=.4;L.locked=true;
+        sel.image=null;renderImages();renderOverlay();renderPanel();
+        toast("Faded, greyscaled and locked — draw away");},"sbtn primary");
+      mk2("Lock",()=>{pushHistory();L.locked=true;sel.image=null;renderOverlay();renderPanel();
+        toast("Locked — unlock from Layers");});
+      mk2("Delete",deleteSelection,"sbtn danger");
+      add(r2);
+      add(`<p class="hint">Drag to move · corner handles scale · top handle rotates. Lock it before tracing so it can't shift under the pen.</p>`);
+    }else if(sel.paths.size){
+      add(`<div class="sect"><h3>${sel.paths.size} path${sel.paths.size>1?"s":""} selected</h3></div>`);
+      const ids=[...sel.paths];
+      const one=ids.length===1?state.paths.find(p=>p.id===ids[0]):null;
+      if(one){
+        const f=flatPts(one);
+        add(`<p class="hint" style="margin-bottom:10px">${one.pts.length} nodes · ${fmt(pathLength(f),0)} mm · ${one.closed?"closed":"open"}</p>`);
+      }
+      const r=document.createElement("div");r.className="btnrow";
+      const mk=(txt,fn,cls="sbtn")=>{const b=document.createElement("button");b.className=cls;
+        b.textContent=txt;b.addEventListener("click",fn);r.appendChild(b);};
+      mk("Reverse",reverseSelected);
+      mk("Simplify",()=>simplifyPaths(ids,0.3));
+      mk("Smooth "+(one&&one.smooth?"off":"on"),()=>{pushHistory();
+        for(const id of ids){const p=state.paths.find(q=>q.id===id);if(p)p.smooth=!p.smooth;}
+        renderPaths();renderPanel();});
+      mk("Duplicate",duplicateSelection);
+      mk("Delete",deleteSelection,"sbtn danger");
+      add(r);
+      const lay=document.createElement("div");lay.className="row";
+      lay.innerHTML=`<label>Move to layer</label><select></select>`;
+      const s2=lay.querySelector("select");
+      for(const L of state.layers)if(L.type==="vector")
+        s2.append(new Option(L.name,L.id));
+      if(one)s2.value=one.layer;
+      s2.addEventListener("change",()=>{pushHistory();
+        for(const id of ids){const p=state.paths.find(q=>q.id===id);if(p)p.layer=s2.value;}
+        renderPaths();});
+      add(lay);
+      if(ui.tool==="node"&&sel.nodes.size){
+        const r3=document.createElement("div");r3.className="btnrow";
+        const b=document.createElement("button");b.className="sbtn danger";
+        b.textContent=`Delete ${sel.nodes.size} node${sel.nodes.size>1?"s":""}`;
+        b.addEventListener("click",deleteNodes);r3.appendChild(b);add(r3);
+      }
+    }else{
+      add(`<div class="sect"><h3>Nothing selected</h3></div>
+      <p class="hint">Use <b>Select</b> to tap a path or image, or drag on empty paper to marquee-select. With the <b>Nodes</b> tool, tap a path to edit its points — tap a segment to insert one.</p>`);
+    }
+  }
+
+  if(ui.panelTab==="layers")renderLayersPanel(body);
+
+  if(ui.panelTab==="page"){
+    add(`<div class="sect"><h3>Page · ${state.name}</h3></div>`);
+    const g=document.createElement("div");g.className="formgrid";g.style.marginBottom="12px";
+    g.innerHTML=`<label>Width mm</label><input type="number" id="pgW" value="${state.page.w}">
+      <label>Height mm</label><input type="number" id="pgH" value="${state.page.h}">
+      <label>Margin mm</label><input type="number" id="pgM" value="${state.page.margin}">
+      <label>Grid mm</label><input type="number" id="pgG" value="${state.page.grid}">
+      <label>Minor grid</label><input type="number" id="pgGm" value="${state.page.gridMinor}">`;
+    add(g);
+    g.addEventListener("change",()=>{pushHistory();
+      state.page.w=clamp(+$("#pgW").value||210,10,3000);
+      state.page.h=clamp(+$("#pgH").value||297,10,3000);
+      state.page.margin=clamp(+$("#pgM").value||0,0,500);
+      state.page.grid=Math.max(0,+$("#pgG").value||0);
+      state.page.gridMinor=Math.max(0,+$("#pgGm").value||0);
+      renderAll();});
+    const r=document.createElement("div");r.className="btnrow";
+    const mk=(txt,fn)=>{const b=document.createElement("button");b.className="sbtn";
+      b.textContent=txt;b.addEventListener("click",fn);r.appendChild(b);};
+    mk("Swap W/H",()=>{pushHistory();[state.page.w,state.page.h]=[state.page.h,state.page.w];renderAll();fitPage();});
+    mk(state.page.showGrid?"Hide grid":"Show grid",()=>{state.page.showGrid=!state.page.showGrid;renderPage();renderPanel();});
+    mk(state.page.snap?"Snap off":"Snap on",()=>{state.page.snap=!state.page.snap;renderPage();renderPanel();});
+    add(r);
+    add(`<p class="hint">Origin for G-code and DXF is the bottom-left corner of the page (Y flipped from screen). SVG keeps top-left, as SVG expects.</p>`);
+  }
+
+  if(ui.panelTab==="plot"){
+    add(`<div class="sect"><h3>Plot order</h3></div>`);
+    const r=document.createElement("div");r.className="btnrow";
+    const mk=(txt,fn,cls="sbtn")=>{const b=document.createElement("button");b.className=cls;
+      b.textContent=txt;b.addEventListener("click",fn);r.appendChild(b);};
+    mk("Optimise travel",()=>optimizeOrder(true),"sbtn primary");
+    mk("Optimise across layers",()=>optimizeOrder(false));
+    add(r);
+    const r2=document.createElement("div");r2.className="btnrow";
+    const mk2=(txt,fn)=>{const b=document.createElement("button");b.className="sbtn";
+      b.textContent=txt;b.addEventListener("click",fn);r2.appendChild(b);};
+    mk2("Join endpoints ≤ 0.5 mm",()=>joinNearby(0.5));
+    mk2("Join ≤ 2 mm",()=>joinNearby(2));
+    mk2("Reverse selected",reverseSelected);
+    add(r2);
+    const pv=document.createElement("div");pv.className="btnrow";
+    const pb=document.createElement("button");pb.className="sbtn"+(ui.plotPreview?" on":"");
+    pb.textContent=ui.plotPreview?"Plot preview on":"Plot preview off";
+    pb.addEventListener("click",()=>{ui.plotPreview=!ui.plotPreview;renderPlotPreview();renderPanel();});
+    pv.appendChild(pb);add(pv);
+    const s=plotStats();
+    add(`<div class="stats">
+      <span>paths</span><b>${s.count}</b>
+      <span>nodes</span><b>${s.nodes}</b>
+      <span>pen-down</span><b>${Math.round(s.draw)} mm</b>
+      <span>pen-up</span><b class="${s.travel>s.draw?"warn":""}">${Math.round(s.travel)} mm</b>
+      <span>est. time</span><b>${estTime(s)}</b></div>`);
+    add(`<p class="hint">Amber numbers mark where each stroke starts; dashed lines are pen-up travel. Optimising uses nearest-neighbour ordering and may reverse open paths.</p>`);
+    add(`<div class="sect" style="margin-top:14px"><h3>Machine</h3></div>`);
+    const m=state.machine;
+    const mg=document.createElement("div");mg.className="formgrid";
+    mg.innerHTML=`
+      <label>Feed mm/min</label><input type="number" id="mFeed" value="${m.feed}">
+      <label>Travel mm/min</label><input type="number" id="mTravel" value="${m.travel}">
+      <label>Pen up cmd</label><input type="text" id="mUp" value="${m.penUp}">
+      <label>Pen down cmd</label><input type="text" id="mDown" value="${m.penDown}">
+      <label>Up delay s</label><input type="number" step="0.05" id="mUd" value="${m.upDelay}">
+      <label>Down delay s</label><input type="number" step="0.05" id="mDd" value="${m.downDelay}">`;
+    add(mg);
+    mg.addEventListener("change",()=>{
+      m.feed=+$("#mFeed").value||2500;m.travel=+$("#mTravel").value||6000;
+      m.penUp=$("#mUp").value;m.penDown=$("#mDown").value;
+      m.upDelay=+$("#mUd").value||0;m.downDelay=+$("#mDd").value||0;
+      scheduleAutosave();renderPanel();});
+    const prof=document.createElement("div");prof.className="row";
+    prof.innerHTML=`<label>Profile</label><select>
+      <option value="">— presets —</option>
+      <option value="servo">GRBL servo (M3 S…)</option>
+      <option value="z">Z-axis lift</option>
+      <option value="fluid">FluidNC solenoid (M62/M63)</option></select>`;
+    prof.querySelector("select").addEventListener("change",e=>{
+      const v=e.target.value;
+      if(v==="servo"){m.penUp="M3 S90";m.penDown="M3 S30";}
+      if(v==="z"){m.penUp="G0 Z5";m.penDown="G1 Z0 F500";}
+      if(v==="fluid"){m.penUp="M62 P0";m.penDown="M63 P0";}
+      renderPanel();scheduleAutosave();
+    });
+    add(prof);
+  }
+}
+function estTime(s){
+  const m=state.machine;
+  const mins=s.draw/Math.max(m.feed,1)+s.travel/Math.max(m.travel,1)
+    +s.count*(m.upDelay+m.downDelay)/60;
+  if(mins<1)return Math.round(mins*60)+" s";
+  return Math.floor(mins)+" min "+Math.round(mins%1*60)+" s";
+}
+
+/* ---------------- Layers panel ---------------- */
+const IC={
+  eye:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  eyeOff:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3l18 18M10 5.3A10 10 0 0 1 22 12a15 15 0 0 1-3.2 3.7M6.6 6.6A13.6 13.6 0 0 0 2 12s3.5 7 10 7a9.7 9.7 0 0 0 4-.9"/></svg>',
+  lock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
+  unlock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.7-1.5"/></svg>',
+  up:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 14l6-6 6 6"/></svg>',
+  down:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 10l6 6 6-6"/></svg>',
+  del:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>',
+  plot:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20l6-9 4 5 6-11"/></svg>'
+};
+function renderLayersPanel(body){
+  const head=document.createElement("div");head.className="btnrow";
+  const nb=document.createElement("button");nb.className="sbtn primary";nb.textContent="+ Layer";
+  nb.addEventListener("click",()=>{pushHistory();
+    const L={id:uid(),type:"vector",name:"Layer "+(state.layers.filter(l=>l.type==="vector").length+1),
+      color:randPen(),visible:true,locked:false,opacity:1,pen:1,plot:true};
+    state.layers.unshift(L);state.activeLayer=L.id;renderAll();renderPanel();});
+  const ib=document.createElement("button");ib.className="sbtn";ib.textContent="+ Image";
+  ib.addEventListener("click",()=>$("#fileImg").click());
+  head.append(nb,ib);body.appendChild(head);
+
+  for(const L of state.layers){
+    const row=document.createElement("div");
+    row.className="layer"+(L.id===state.activeLayer?" on":"");
+    const sw=document.createElement("span");sw.className="sw";
+    sw.style.background=L.type==="vector"?L.color:"linear-gradient(45deg,#777,#bbb)";
+    const nm=document.createElement("span");nm.className="nm";
+    const count=L.type==="vector"?state.paths.filter(p=>p.layer===L.id).length+" paths":"image";
+    nm.innerHTML=`${L.name}<small>${count}${L.type==="vector"?" · pen "+L.pen:""}</small>`;
+    nm.addEventListener("click",()=>{
+      if(L.type==="vector"){state.activeLayer=L.id;renderPanel();}
+      else{const im=state.images.find(m=>m.id===L.imageId);
+        if(im&&!L.locked){sel.paths.clear();sel.image=im;setTool("select");showTab("object");renderOverlay();}
+        else toast("Image is locked — tap the padlock to unlock");}
+    });
+    // iOS never fires dblclick reliably: tapping the name of the ALREADY-active layer renames it
+    nm.addEventListener("click",()=>{
+      if(L.id===state.activeLayer||L.type==="image"){
+        const v=prompt("Layer name",L.name);
+        if(v){pushHistory();L.name=v;renderPanel();}
+      }
+    },true);
+    const mk=(html,fn,off)=>{const b=document.createElement("button");
+      b.className="ibtn"+(off?" off":"");b.innerHTML=html;
+      b.addEventListener("click",e=>{e.stopPropagation();fn();});row.appendChild(b);return b;};
+    row.append(sw,nm);
+    mk(L.visible?IC.eye:IC.eyeOff,()=>{L.visible=!L.visible;renderAll();renderPanel();},!L.visible);
+    mk(L.locked?IC.lock:IC.unlock,()=>{L.locked=!L.locked;
+      if(L.locked&&sel.image&&L.imageId===sel.image.id){sel.image=null;renderOverlay();}
+      renderPanel();},!L.locked);
+    if(L.type==="vector")
+      mk(IC.plot,()=>{L.plot=!L.plot;renderPlotPreview();renderPanel();},!L.plot).title="Include in plot/export";
+    body.appendChild(row);
+    // reorder / delete live in the expanded area so the row keeps 44pt targets on iPad
+    if(L.id===state.activeLayer||L.type==="image"){
+      const acts=document.createElement("div");acts.className="btnrow";
+      acts.style.cssText="padding:0 6px 2px";
+      const ab=(txt,fn,cls="sbtn")=>{const b=document.createElement("button");b.className=cls;
+        b.textContent=txt;b.addEventListener("click",fn);acts.appendChild(b);};
+      ab("↑ Up",()=>{const i=state.layers.indexOf(L);
+        if(i>0){pushHistory();state.layers.splice(i,1);state.layers.splice(i-1,0,L);renderAll();renderPanel();}});
+      ab("↓ Down",()=>{const i=state.layers.indexOf(L);
+        if(i<state.layers.length-1){pushHistory();state.layers.splice(i,1);state.layers.splice(i+1,0,L);renderAll();renderPanel();}});
+      ab("Rename",()=>{const v=prompt("Layer name",L.name);
+        if(v){pushHistory();L.name=v;renderPanel();}});
+      ab("Delete",()=>{
+        if(!confirm(`Delete \u201c${L.name}\u201d${L.type==="vector"?" and its paths":""}?`))return;
+        pushHistory();
+        state.layers=state.layers.filter(x=>x!==L);
+        if(L.type==="vector")state.paths=state.paths.filter(p=>p.layer!==L.id);
+        else state.images=state.images.filter(m=>m.id!==L.imageId);
+        clearSel();renderAll();renderPanel();},"sbtn danger");
+      body.appendChild(acts);
+    }
+
+    if(L.id===state.activeLayer&&L.type==="vector"){
+      const opts=document.createElement("div");
+      opts.style.cssText="padding:2px 6px 10px";
+      const cr=document.createElement("div");cr.className="row";
+      cr.innerHTML=`<label>Colour</label><input type="color" value="${L.color}">
+        <label style="flex:.6;text-align:right">Pen</label><input type="number" min="1" max="8" value="${L.pen}" style="flex:.7">`;
+      cr.querySelector("input[type=color]").addEventListener("input",e=>{L.color=e.target.value;renderPaths();
+        row.querySelector(".sw").style.background=L.color;});
+      cr.querySelector("input[type=number]").addEventListener("change",e=>{L.pen=+e.target.value||1;scheduleAutosave();});
+      opts.appendChild(cr);
+      opts.appendChild(slider("Opacity",L.opacity,0.05,1,0.01,v=>{L.opacity=v;renderPaths();}));
+      body.appendChild(opts);
+    }
+    if(L.type==="image"){
+      const opts=document.createElement("div");
+      opts.style.cssText="padding:2px 6px 10px";
+      opts.appendChild(slider("Opacity",L.opacity,0.05,1,0.01,v=>{L.opacity=v;renderImages();}));
+      body.appendChild(opts);
+    }
+  }
+  const hint=document.createElement("p");hint.className="hint";
+  hint.textContent="Top of this list draws on top. The zig-zag toggle removes a layer from plot preview and export. Double-tap a name to rename.";
+  body.appendChild(hint);
+}
+const PENS=["#1a1a1a","#c62f2f","#1f5fbf","#1c8c4e","#b3611a","#7c3aad","#0e8a86"];
+function randPen(){return PENS[state.layers.filter(l=>l.type==="vector").length%PENS.length];}
+
+/* ---------------- Images ---------------- */
+function fitImageToPage(im){
+  const {w,h,margin}=state.page;
+  const aw=w-2*margin,ah=h-2*margin;
+  im.scale=Math.min(aw/im.w0,ah/im.h0);
+  im.x=w/2;im.y=h/2;im.rot=0;
+}
+function importImageFile(file){
+  const rd=new FileReader();
+  rd.onload=()=>{
+    const img=new Image();
+    img.onload=()=>{
+      pushHistory();
+      const id=uid();
+      imageStore[id]=rd.result;
+      const im={id,name:file.name||"Image",w0:img.naturalWidth,h0:img.naturalHeight,
+        x:0,y:0,scale:1,rot:0,flipX:false,flipY:false,gray:0,bright:1,contrast:1,invert:false};
+      fitImageToPage(im);
+      state.images.push(im);
+      state.layers.push({id:uid(),type:"image",imageId:id,name:im.name.replace(/\.[^.]+$/,""),
+        visible:true,locked:false,opacity:.85});
+      renderAll();showTab("layers",true);
+      toast("Image imported — select it, then “Trace mode” fades and locks it");
+    };
+    img.onerror=()=>toast("That image couldn't be read");
+    img.src=rd.result;
+  };
+  rd.readAsDataURL(file);
+}
+$("#fileImg").addEventListener("change",e=>{
+  if(e.target.files[0])importImageFile(e.target.files[0]);
+  e.target.value="";
+});
+wrap.addEventListener("dragover",e=>e.preventDefault());
+wrap.addEventListener("drop",e=>{
+  e.preventDefault();
+  const f=[...e.dataTransfer.files].find(f=>f.type.startsWith("image/"));
+  if(f)importImageFile(f);
+});
+window.addEventListener("paste",e=>{
+  const it=[...(e.clipboardData?.items||[])].find(i=>i.type.startsWith("image/"));
+  if(it)importImageFile(it.getAsFile());
+});
+
+/* ---------------- Export ---------------- */
+let expFmt="svg";
+const expCfg={svgLayers:true,svgImages:false,dxfTol:0.2,gInline:true};
+function exportPaths(){ // [ {layer, pts} ] in plot order, only plottable
+  const out=[];
+  for(const L of state.layers){
+    if(L.type!=="vector"||!L.plot||!L.visible)continue;
+    for(const p of state.paths)if(p.layer===L.id)
+      out.push({L,p,flat:flatPts(p,expCfg.dxfTol)});
+  }
+  return out;
+}
+function makeSVG(){
+  const {w,h}=state.page;
+  let out=`<?xml version="1.0" encoding="UTF-8"?>\n`+
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}mm" height="${h}mm" viewBox="0 0 ${w} ${h}">\n`;
+  for(const L of state.layers){
+    if(L.type==="image"&&expCfg.svgImages&&L.visible){
+      const im=state.images.find(m=>m.id===L.imageId);
+      if(im&&imageStore[im.id]){
+        out+=`  <g opacity="${L.opacity}" transform="translate(${fmt(im.x,3)} ${fmt(im.y,3)}) rotate(${fmt(im.rot,2)}) scale(${fmt(im.scale*(im.flipX?-1:1),5)} ${fmt(im.scale*(im.flipY?-1:1),5)})">`+
+          `<image x="${-im.w0/2}" y="${-im.h0/2}" width="${im.w0}" height="${im.h0}" href="${imageStore[im.id]}"/></g>\n`;
+      }
+      continue;
+    }
+    if(L.type!=="vector"||!L.plot||!L.visible)continue;
+    const paths=state.paths.filter(p=>p.layer===L.id);
+    if(!paths.length)continue;
+    out+=`  <g id="${L.name.replace(/[^\w-]/g,"_")||L.id}" inkscape:label="${L.name.replace(/"/g,"")}" `+
+      `xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" `+
+      `fill="none" stroke="${L.color}" stroke-width="${state.stroke.width}" stroke-linecap="round" stroke-linejoin="round">\n`;
+    for(const p of paths)out+=`    <path d="${pathToD(p)}"/>\n`;
+    out+=`  </g>\n`;
+  }
+  return out+`</svg>\n`;
+}
+function makeDXF(){
+  const H=state.page.h,pr=3;
+  let s="0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n";
+  s+="0\nSECTION\n2\nENTITIES\n";
+  for(const {L,p,flat} of exportPaths()){
+    const lname=(L.name||"0").replace(/[^\w-]/g,"_");
+    s+=`0\nPOLYLINE\n8\n${lname}\n66\n1\n70\n${p.closed?1:0}\n`;
+    for(const q of flat)
+      s+=`0\nVERTEX\n8\n${lname}\n10\n${q[0].toFixed(pr)}\n20\n${(H-q[1]).toFixed(pr)}\n30\n0\n`;
+    s+="0\nSEQEND\n";
+  }
+  s+="0\nENDSEC\n0\nEOF\n";
+  return s;
+}
+function makeGcode(){
+  const m=state.machine,H=state.page.h,pr=clamp(m.precision,0,4);
+  const Y=y=>(m.flipY?H-y:y).toFixed(pr), X=x=>x.toFixed(pr);
+  const dwell=t=>t>0?`G4 P${t}\n`:"";
+  let g=`; Plotter Trace Studio — ${state.name}\n; page ${state.page.w}x${state.page.h} mm, origin bottom-left\nG21\nG90\n${m.penUp}\n${dwell(m.upDelay)}`;
+  const groups=exportPaths();
+  let ln=null;
+  for(const {L,flat} of groups){
+    if(L.id!==ln){g+=`; layer: ${L.name} (pen ${L.pen})\n`;ln=L.id;}
+    g+=`G0 X${X(flat[0][0])} Y${Y(flat[0][1])} F${m.travel}\n`;
+    g+=`${m.penDown}\n${dwell(m.downDelay)}`;
+    for(let i=1;i<flat.length;i++)
+      g+=`G1 X${X(flat[i][0])} Y${Y(flat[i][1])}${i===1?` F${m.feed}`:""}\n`;
+    g+=`${m.penUp}\n${dwell(m.upDelay)}`;
+  }
+  if(m.home)g+=`G0 X0 Y0 F${m.travel}\n`;
+  return g+"; end\n";
+}
+function download(name,text,mime){
+  const blob=new Blob([text],{type:mime});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);a.download=name;
+  document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},400);
+}
+function openExport(){
+  $("#modalExport").classList.add("open");
+  renderExportOpts();
+}
+function renderExportOpts(){
+  $$(".exptabs button").forEach(b=>b.classList.toggle("on",b.dataset.fmt===expFmt));
+  const o=$("#expOpts");o.innerHTML="";
+  const s=plotStats();
+  const oob=checkOutOfBounds();
+  if(expFmt==="svg"){
+    o.innerHTML=`
+      <div class="row"><label>Include reference images</label><input type="checkbox" id="xImg" ${expCfg.svgImages?"checked":""}></div>
+      <p class="hint">SVG in real millimetres, centreline paths, no fills — ready for vpype, Inkscape or Saxi. Layers export as named groups; layers with plotting switched off are skipped.</p>`;
+    o.querySelector("#xImg").addEventListener("change",e=>expCfg.svgImages=e.target.checked);
+  }
+  if(expFmt==="dxf"){
+    o.innerHTML=`
+      <div class="row"><label>Curve tolerance mm</label>
+        <input type="number" id="xTol" step="0.05" min="0.02" max="2" value="${expCfg.dxfTol}" style="flex:.8"></div>
+      <p class="hint">ASCII DXF R12 with one POLYLINE per path, layer names preserved, Y-up, origin at the bottom-left of the page. Smooth curves are flattened at this tolerance.</p>`;
+    o.querySelector("#xTol").addEventListener("change",e=>expCfg.dxfTol=clamp(+e.target.value||0.2,0.02,2));
+  }
+  if(expFmt==="gcode"){
+    const m=state.machine;
+    o.innerHTML=`
+      <div class="formgrid" style="margin-bottom:10px">
+        <label>Pen up</label><input type="text" id="xUp" value="${m.penUp}">
+        <label>Pen down</label><input type="text" id="xDown" value="${m.penDown}">
+        <label>Feed</label><input type="number" id="xFeed" value="${m.feed}">
+        <label>Travel</label><input type="number" id="xTravel" value="${m.travel}">
+      </div>
+      <div class="row"><label>Return to X0 Y0 when done</label><input type="checkbox" id="xHome" ${m.home?"checked":""}></div>
+      <p class="hint">G21 absolute millimetres, origin bottom-left. Delays and more machine settings live in the Plot panel.</p>`;
+    o.querySelector("#xUp").addEventListener("change",e=>m.penUp=e.target.value);
+    o.querySelector("#xDown").addEventListener("change",e=>m.penDown=e.target.value);
+    o.querySelector("#xFeed").addEventListener("change",e=>m.feed=+e.target.value||2500);
+    o.querySelector("#xTravel").addEventListener("change",e=>m.travel=+e.target.value||6000);
+    o.querySelector("#xHome").addEventListener("change",e=>m.home=e.target.checked);
+  }
+  $("#expStats").innerHTML=`
+    <span>page</span><b>${state.page.w} × ${state.page.h} mm</b>
+    <span>paths</span><b>${s.count}</b>
+    <span>nodes</span><b>${s.nodes}</b>
+    <span>pen-down</span><b>${Math.round(s.draw)} mm</b>
+    <span>pen-up</span><b>${Math.round(s.travel)} mm</b>
+    <span>est. time</span><b>${estTime(s)}</b>
+    ${oob?`<span class="warn">warning</span><b class="warn">${oob} path${oob>1?"s":""} outside the page</b>`:""}`;
+}
+function checkOutOfBounds(){
+  let n=0;
+  for(const p of state.paths){
+    const b=pathBBox(p);
+    if(b.x0<-0.01||b.y0<-0.01||b.x1>state.page.w+0.01||b.y1>state.page.h+0.01)n++;
+  }
+  return n;
+}
+$$(".exptabs button").forEach(b=>b.addEventListener("click",()=>{expFmt=b.dataset.fmt;renderExportOpts();}));
+$("#expCancel").addEventListener("click",()=>$("#modalExport").classList.remove("open"));
+$("#expGo").addEventListener("click",()=>{
+  const base=state.name.replace(/[^\w -]/g,"").trim()||"plot";
+  if(!state.paths.length)return toast("Nothing to export yet — draw something first");
+  if(expFmt==="svg")download(base+".svg",makeSVG(),"image/svg+xml");
+  if(expFmt==="dxf")download(base+".dxf",makeDXF(),"application/dxf");
+  if(expFmt==="gcode")download(base+".gcode",makeGcode(),"text/plain");
+  toast("Exported "+expFmt.toUpperCase());
+});
+
+/* ---------------- Storage ---------------- */
+let autosaveT=null;
+function scheduleAutosave(){
+  clearTimeout(autosaveT);
+  autosaveT=setTimeout(()=>{
+    try{
+      localStorage.setItem("pts_project",JSON.stringify({state,images:imageStore,v:1}));
+    }catch(e){/* image too large for localStorage — file save still works */}
+  },900);
+}
+function saveProjectFile(){
+  const data=JSON.stringify({state,images:imageStore,v:1});
+  download((state.name.replace(/[^\w -]/g,"").trim()||"project")+".plottrace.json",data,"application/json");
+  toast("Project saved");
+}
+function openProjectFile(file){
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      const data=JSON.parse(rd.result);
+      loadProjectData(data);
+      toast("Project opened");
+    }catch(e){toast("That file isn't a Plotter Trace Studio project");}
+  };
+  rd.readAsText(file);
+}
+function loadProjectData(data){
+  state=data.state;
+  for(const k in imageStore)delete imageStore[k];
+  Object.assign(imageStore,data.images||{});
+  hist.undo.length=0;hist.redo.length=0;clearSel();
+  renderAll();renderPanel();fitPage();updateHistBtns();
+}
+$("#fileProj").addEventListener("change",e=>{
+  if(e.target.files[0])openProjectFile(e.target.files[0]);
+  e.target.value="";
+});
+
+/* ---------------- Menus / modals / top bar ---------------- */
+$("#btnMenu").addEventListener("click",e=>{e.stopPropagation();$("#menu").classList.toggle("open");});
+document.addEventListener("click",e=>{
+  if(!$("#menu").contains(e.target)&&e.target.id!=="btnMenu")$("#menu").classList.remove("open");
+});
+$("#mNew").addEventListener("click",()=>{$("#menu").classList.remove("open");openNewDialog();});
+$("#mOpen").addEventListener("click",()=>{$("#menu").classList.remove("open");$("#fileProj").click();});
+$("#mSave").addEventListener("click",()=>{$("#menu").classList.remove("open");saveProjectFile();});
+$("#mImg").addEventListener("click",()=>{$("#menu").classList.remove("open");$("#fileImg").click();});
+$("#mHelp").addEventListener("click",()=>{$("#menu").classList.remove("open");$("#modalHelp").classList.add("open");});
+$("#helpClose").addEventListener("click",()=>$("#modalHelp").classList.remove("open"));
+
+$("#btnUndo").addEventListener("click",undo);
+$("#btnRedo").addEventListener("click",redo);
+$("#btnFit").addEventListener("click",()=>fitPage());
+$("#btnExport").addEventListener("click",openExport);
+$("#btnGrid").addEventListener("click",()=>{state.page.showGrid=!state.page.showGrid;renderPage();});
+$("#btnSnap").addEventListener("click",()=>{state.page.snap=!state.page.snap;renderPage();
+  toast(state.page.snap?"Snapping to grid":"Snapping off");});
+$("#btnPlotPrev").addEventListener("click",()=>{ui.plotPreview=!ui.plotPreview;renderPlotPreview();});
+$("#dockFab").addEventListener("click",()=>$("#dock").classList.toggle("open"));
+
+/* ---- layout tiers: A ≥901 side panel · B 600-900 bottom sheet · C ≤599 overlays ---- */
+function tier(){const w=window.innerWidth;return w>900?"A":(w>=600?"B":"C");}
+function togglePanel(force){
+  const p=$("#panel");
+  if(tier()==="A"){
+    const hide=force===undefined?!p.classList.contains("hidden"):!force;
+    p.classList.toggle("hidden",hide);
+  }else{
+    const open=force===undefined?!p.classList.contains("open"):force;
+    p.classList.toggle("open",open);
+  }
+  $("#btnPanel").classList.toggle("on",panelVisible());
+  requestAnimationFrame(()=>applyView());
+}
+function panelVisible(){
+  const p=$("#panel");
+  return tier()==="A"?!p.classList.contains("hidden"):p.classList.contains("open");
+}
+$("#btnPanel").addEventListener("click",()=>togglePanel());
+$("#panelToggleFab").addEventListener("click",()=>togglePanel());
+
+// drag the grip to resize the bottom sheet (iPad portrait)
+(function(){
+  const grip=$("#sheetgrip"),panel=$("#panel");
+  let g=null;
+  grip.addEventListener("pointerdown",e=>{
+    e.preventDefault();grip.setPointerCapture(e.pointerId);
+    g={y:e.clientY,h:panel.getBoundingClientRect().height};
+  });
+  grip.addEventListener("pointermove",e=>{
+    if(!g)return;
+    const h=clamp(g.h+(g.y-e.clientY),180,window.innerHeight*0.8);
+    panel.style.setProperty("--sheeth",h+"px");
+  });
+  const end=()=>{g=null;};
+  grip.addEventListener("pointerup",end);grip.addEventListener("pointercancel",end);
+  // double-tap the grip snaps between half and tall
+  let lg=0;
+  grip.addEventListener("click",()=>{
+    const now=performance.now();
+    if(now-lg<320){
+      const cur=panel.getBoundingClientRect().height;
+      panel.style.setProperty("--sheeth",(cur>window.innerHeight*0.5?"44dvh":"76dvh"));
+    }
+    lg=now;
+  });
+})();
+
+/* new project dialog */
+function openNewDialog(){$("#modalNew").classList.add("open");}
+$("#npPreset").addEventListener("change",applyPreset);
+$("#npOrient").addEventListener("change",applyPreset);
+function applyPreset(){
+  const v=$("#npPreset").value;
+  if(v==="custom")return;
+  let [w,h]=v.split(",").map(Number);
+  if($("#npOrient").value==="landscape")[w,h]=[h,w];
+  $("#npW").value=w;$("#npH").value=h;
+}
+$("#npCancel").addEventListener("click",()=>$("#modalNew").classList.remove("open"));
+$("#npCreate").addEventListener("click",()=>{
+  state=defaultState(
+    $("#npName").value.trim()||"Untitled trace",
+    clamp(+$("#npW").value||210,10,3000),
+    clamp(+$("#npH").value||297,10,3000),
+    clamp(+$("#npMargin").value||0,0,500));
+  for(const k in imageStore)delete imageStore[k];
+  hist.undo.length=0;hist.redo.length=0;clearSel();
+  $("#modalNew").classList.remove("open");
+  renderAll();renderPanel();fitPage();updateHistBtns();scheduleAutosave();
+});
+
+/* keyboard */
+document.addEventListener("keydown",e=>{
+  if(e.target.matches("input,select,textarea"))return;
+  const k=e.key.toLowerCase(),mod=e.metaKey||e.ctrlKey;
+  if(mod&&k==="z"){e.preventDefault();e.shiftKey?redo():undo();return;}
+  if(mod&&k==="y"){e.preventDefault();redo();return;}
+  if(mod&&k==="s"){e.preventDefault();saveProjectFile();return;}
+  if(mod&&k==="d"){e.preventDefault();duplicateSelection();return;}
+  if(k==="delete"||k==="backspace"){
+    if(ui.tool==="node"&&sel.nodes.size)deleteNodes();else deleteSelection();return;}
+  if(k==="escape"){
+    if(penPath)finishPen();
+    if(action&&action.kind==="stroke")cancelStroke();
+    marquee=null;action=null;clearSel();renderPaths();return;}
+  if(k==="enter"&&penPath){finishPen();return;}
+  const map={v:"select",b:"draw",p:"pen",l:"line",r:"rect",o:"ellipse",n:"node",e:"erase",h:"pan"};
+  if(map[k]){if(k!=="p"&&penPath)finishPen();setTool(map[k]);return;}
+  if(k==="+"||k==="="){const r=svg.getBoundingClientRect();zoomAt(r.left+r.width/2,r.top+r.height/2,1.25);}
+  if(k==="-"){const r=svg.getBoundingClientRect();zoomAt(r.left+r.width/2,r.top+r.height/2,0.8);}
+  if(k==="0")fitPage();
+});
+
+/* ---------------- Boot ---------------- */
+// iOS Safari: stop the whole page pinch-zooming / rubber-banding under the canvas
+for(const g of ["gesturestart","gesturechange","gestureend"])
+  document.addEventListener(g,e=>e.preventDefault(),{passive:false});
+document.addEventListener("touchmove",e=>{
+  if(!e.target.closest||!e.target.closest("#panelbody,.dialog,#dock,#statusbar"))e.preventDefault();
+},{passive:false});
+document.addEventListener("dblclick",e=>e.preventDefault());
+// keep layout correct when the iPad rotates or Stage Manager resizes the window
+if(window.visualViewport)
+  window.visualViewport.addEventListener("resize",()=>{if(state)fitPage();});
+
+function boot(){
+  buildScene();buildDock();
+  let restored=false;
+  try{
+    const raw=localStorage.getItem("pts_project");
+    if(raw){
+      const data=JSON.parse(raw);
+      if(data&&data.state&&data.state.page){loadProjectData(data);restored=true;
+        toast("Restored your last session");}
+    }
+  }catch(e){}
+  if(!restored){
+    state=defaultState();
+    renderAll();renderPanel();fitPage();
+    openNewDialog();
+  }
+  setTool("draw");
+  updateHistBtns();
+  $("#btnPanel").classList.toggle("on",panelVisible());
+  window.addEventListener("resize",()=>{fitPage();$("#btnPanel").classList.toggle("on",panelVisible());});
+}
+boot();
+</script>
+</body>
+</html>
