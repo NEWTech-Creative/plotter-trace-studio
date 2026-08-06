@@ -22,12 +22,14 @@
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;overflow:hidden;overscroll-behavior:none}
 body{background:var(--desk);color:var(--ink);font-family:var(--sans);font-size:14px;
-  display:flex;flex-direction:column;touch-action:none;
+  display:flex;flex-direction:column;touch-action:manipulation;
   position:fixed;inset:0;width:100%;height:100dvh;
   -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
   padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left)}
 input,textarea{-webkit-user-select:auto;user-select:auto}
 #panelbody,.dialog{touch-action:pan-y}
+#canvaswrap{touch-action:none}
+button,.tbtn,.dbtn,.sbtn,.ibtn,#paneltabs button,.exptabs button{touch-action:manipulation}
 button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 input,select{font:inherit;color:var(--ink);background:var(--panel2);border:1px solid var(--line2);
   border-radius:6px;padding:6px 8px;min-height:34px}
@@ -153,6 +155,11 @@ input[type=checkbox]{width:18px;height:18px;accent-color:var(--pen);min-height:0
 textarea.cmd{width:100%;font-family:var(--mono);font-size:12px;background:var(--panel2);
   border:1px solid var(--line2);border-radius:6px;color:var(--ink);padding:6px;resize:vertical}
 
+#imgConfirm{display:none;position:absolute;right:14px;top:14px;z-index:28;align-items:center;gap:8px;
+  height:52px;padding:0 20px 0 16px;border-radius:26px;background:var(--pen);color:#0d2620;
+  font-weight:600;font-size:15px;box-shadow:var(--shadow);touch-action:manipulation}
+#imgConfirm.show{display:flex}
+#imgConfirm svg{width:22px;height:22px}
 #toast{position:fixed;left:50%;bottom:70px;transform:translateX(-50%) translateY(20px);background:var(--panel2);
   border:1px solid var(--line2);border-radius:10px;padding:10px 16px;font-size:13px;opacity:0;
   pointer-events:none;transition:.25s;z-index:200;box-shadow:var(--shadow);max-width:90vw}
@@ -265,6 +272,10 @@ textarea.cmd{width:100%;font-family:var(--mono);font-size:12px;background:var(--
   <div id="canvaswrap">
     <svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg>
     <button id="dockFab" title="Tools"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7a3.5 3.5 0 0 0-5-5l-7 7L4 20l6-1z"/></svg></button>
+    <button id="imgConfirm" title="Done positioning — lock the image and go back to drawing">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4.5 4.5L19 7"/></svg>
+      <span>Done</span>
+    </button>
     <button id="panelToggleFab" title="Panels"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14 4v16"/></svg></button>
   </div>
 
@@ -592,9 +603,9 @@ function renderPage(){
   $("#btnSnap").classList.toggle("on",state.page.snap);
 }
 function layerById(id){return state.layers.find(l=>l.id===id);}
-function activeLayer(){
+function activeLayer(){ // the vector layer strokes land on
   let l=layerById(state.activeLayer);
-  if(!l||l.type!=="vector"){l=state.layers.find(x=>x.type==="vector");state.activeLayer=l?l.id:null;}
+  if(!l||l.type!=="vector")l=state.layers.find(x=>x.type==="vector")||null;
   return l;
 }
 function renderImages(){
@@ -653,7 +664,12 @@ function selBBox(){
     x0=Math.min(x0,im.x-r);y0=Math.min(y0,im.y-r);x1=Math.max(x1,im.x+r);y1=Math.max(y1,im.y+r);has=true;}
   return has?{x0,y0,x1,y1}:null;
 }
+function updateImgConfirm(){
+  const b=document.getElementById("imgConfirm");
+  if(b)b.classList.toggle("show",!!sel.image);
+}
 function renderOverlay(){
+  updateImgConfirm();
   gOverlay.innerHTML="";
   const hs=9/view.zoom; // handle half-size
   if(marquee){el("rect",{class:"marquee",x:Math.min(marquee.a[0],marquee.b[0]),
@@ -1738,24 +1754,25 @@ function renderLayersPanel(body){
   for(const L of state.layers){
     const row=document.createElement("div");
     row.className="layer"+(L.id===state.activeLayer?" on":"");
+    row.style.cursor="pointer";
     const sw=document.createElement("span");sw.className="sw";
     sw.style.background=L.type==="vector"?L.color:"linear-gradient(45deg,#777,#bbb)";
     const nm=document.createElement("span");nm.className="nm";
     const count=L.type==="vector"?state.paths.filter(p=>p.layer===L.id).length+" paths":"image";
     nm.innerHTML=`${L.name}<small>${count}${L.type==="vector"?" · pen "+L.pen:""}</small>`;
-    nm.addEventListener("click",()=>{
-      if(L.type==="vector"){state.activeLayer=L.id;renderPanel();}
-      else{const im=state.images.find(m=>m.id===L.imageId);
-        if(im&&!L.locked){sel.paths.clear();sel.image=im;setTool("select");showTab("object");renderOverlay();}
-        else toast("Image is locked — tap the padlock to unlock");}
-    });
-    // iOS never fires dblclick reliably: tapping the name of the ALREADY-active layer renames it
-    nm.addEventListener("click",()=>{
-      if(L.id===state.activeLayer||L.type==="image"){
-        const v=prompt("Layer name",L.name);
-        if(v){pushHistory();L.name=v;renderPanel();}
+    // tapping ANYWHERE in the row makes this the active layer (renaming lives on its own button)
+    row.addEventListener("click",()=>{
+      if(L.type==="vector"){
+        state.activeLayer=L.id;
+        if(sel.image){sel.image=null;renderOverlay();}
+        renderPanel();
+      }else{
+        const im=state.images.find(m=>m.id===L.imageId);
+        state.activeLayer=L.id;
+        if(im&&!L.locked){sel.paths.clear();sel.image=im;setTool("select");renderOverlay();renderPanel();}
+        else{renderPanel();toast("Image is locked — tap the padlock to unlock");}
       }
-    },true);
+    });
     const mk=(html,fn,off)=>{const b=document.createElement("button");
       b.className="ibtn"+(off?" off":"");b.innerHTML=html;
       b.addEventListener("click",e=>{e.stopPropagation();fn();});row.appendChild(b);return b;};
@@ -1768,7 +1785,7 @@ function renderLayersPanel(body){
       mk(IC.plot,()=>{L.plot=!L.plot;renderPlotPreview();renderPanel();},!L.plot).title="Include in plot/export";
     body.appendChild(row);
     // reorder / delete live in the expanded area so the row keeps 44pt targets on iPad
-    if(L.id===state.activeLayer||L.type==="image"){
+    if(L.id===state.activeLayer){
       const acts=document.createElement("div");acts.className="btnrow";
       acts.style.cssText="padding:0 6px 2px";
       const ab=(txt,fn,cls="sbtn")=>{const b=document.createElement("button");b.className=cls;
@@ -1802,7 +1819,7 @@ function renderLayersPanel(body){
       opts.appendChild(slider("Opacity",L.opacity,0.05,1,0.01,v=>{L.opacity=v;renderPaths();}));
       body.appendChild(opts);
     }
-    if(L.type==="image"){
+    if(L.type==="image"&&L.id===state.activeLayer){
       const opts=document.createElement("div");
       opts.style.cssText="padding:2px 6px 10px";
       opts.appendChild(slider("Opacity",L.opacity,0.05,1,0.01,v=>{L.opacity=v;renderImages();}));
@@ -2062,6 +2079,28 @@ $("#btnSnap").addEventListener("click",()=>{state.page.snap=!state.page.snap;ren
 $("#btnPlotPrev").addEventListener("click",()=>{ui.plotPreview=!ui.plotPreview;renderPlotPreview();});
 $("#dockFab").addEventListener("click",()=>$("#dock").classList.toggle("open"));
 
+// ✓ Done — commit the image position, lock it, and hand control back to drawing
+$("#imgConfirm").addEventListener("click",()=>{
+  if(!sel.image)return;
+  pushHistory();
+  const L=state.layers.find(l=>l.imageId===sel.image.id);
+  if(L)L.locked=true;
+  sel.image=null;
+  let v=state.layers.find(l=>l.type==="vector");
+  if(!v){ // no vector layer yet — make one so there is somewhere to draw
+    v={id:uid(),type:"vector",name:"Layer 1",color:randPen(),visible:true,locked:false,
+       opacity:1,pen:1,plot:true};
+    state.layers.unshift(v);
+  }
+  if(v.locked)v.locked=false;
+  state.activeLayer=v.id;
+  setTool("draw");
+  if(tier()!=="A")togglePanel(false);
+  showTab("stroke");
+  renderAll();renderOverlay();
+  toast("Image locked — drawing on “"+v.name+"”");
+});
+
 /* ---- layout tiers: A ≥901 side panel · B 600-900 bottom sheet · C ≤599 overlays ---- */
 function tier(){const w=window.innerWidth;return w>900?"A":(w>=600?"B":"C");}
 function togglePanel(force){
@@ -2160,8 +2199,10 @@ document.addEventListener("keydown",e=>{
 // iOS Safari: stop the whole page pinch-zooming / rubber-banding under the canvas
 for(const g of ["gesturestart","gesturechange","gestureend"])
   document.addEventListener(g,e=>e.preventDefault(),{passive:false});
-document.addEventListener("touchmove",e=>{
-  if(!e.target.closest||!e.target.closest("#panelbody,.dialog,#dock,#statusbar"))e.preventDefault();
+// only the drawing surface blocks native scrolling — blocking it document-wide
+// stopped Apple Pencil taps from producing clicks on buttons
+document.getElementById("canvaswrap").addEventListener("touchmove",e=>{
+  e.preventDefault();
 },{passive:false});
 document.addEventListener("dblclick",e=>e.preventDefault());
 // keep layout correct when the iPad rotates or Stage Manager resizes the window
