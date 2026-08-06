@@ -6,7 +6,7 @@ Designed for the iPad (finger or Apple Pencil), works fine on desktop with a mou
 
 ![status](https://img.shields.io/badge/build-none%20required-45C4AC) ![file](https://img.shields.io/badge/single%20file-HTML-blue)
 
---- 
+---
 
 ## Why
 
