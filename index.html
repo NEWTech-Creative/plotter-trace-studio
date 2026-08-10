@@ -28,7 +28,8 @@ body{background:var(--desk);color:var(--ink);font-family:var(--sans);font-size:1
   padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left)}
 input,textarea{-webkit-user-select:auto;user-select:auto}
 #panelbody,.dialog{touch-action:pan-y}
-#canvaswrap{touch-action:none}
+/* only the SVG surface swallows gestures — buttons floating over it must stay tappable */
+#dockFab,#panelToggleFab,#imgConfirm{touch-action:manipulation}
 button,.tbtn,.dbtn,.sbtn,.ibtn,#paneltabs button,.exptabs button{touch-action:manipulation}
 button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 input,select{font:inherit;color:var(--ink);background:var(--panel2);border:1px solid var(--line2);
@@ -84,6 +85,8 @@ input[type=checkbox]{width:18px;height:18px;accent-color:var(--pen);min-height:0
 #svg .marquee{fill:rgba(69,196,172,.08);stroke:var(--pen);stroke-width:1;vector-effect:non-scaling-stroke;stroke-dasharray:4 3}
 #svg .node{fill:#fff;stroke:#2f7dd1;stroke-width:1.5;vector-effect:non-scaling-stroke}
 #svg .node.sel{fill:#2f7dd1}
+#svg .arm{stroke:#2f7dd1;stroke-width:1;vector-effect:non-scaling-stroke;opacity:.75}
+#svg .armdot{fill:#2f7dd1;stroke:#fff;stroke-width:1.5;vector-effect:non-scaling-stroke}
 #svg .travel{stroke:var(--travel);stroke-width:1;vector-effect:non-scaling-stroke;stroke-dasharray:5 4;fill:none;opacity:.9}
 #svg .ordbadge circle{fill:var(--travel);stroke:#2b230f;stroke-width:.5;vector-effect:non-scaling-stroke}
 #svg .ordbadge text{fill:#241c09;font:600 8px var(--mono);text-anchor:middle;dominant-baseline:central}
@@ -451,46 +454,87 @@ function crControls(p0,p1,p2,p3){ // centripetal Catmull-Rom → cubic Bézier c
   const m2y=d1*((p2[1]-p1[1])/d1-(p3[1]-p1[1])/(d1+d2)+(p3[1]-p2[1])/d2);
   return [[p1[0]+m1x/3,p1[1]+m1y/3],[p2[0]-m2x/3,p2[1]-m2y/3]];
 }
-function catmullSample(ptsIn,closed,tolMM=0.25){ // flatten smooth curve to a polyline
-  const pts=dedupe(ptsIn);
-  if(pts.length<3)return pts.slice();
-  const n=pts.length,P=i=>closed?pts[(i%n+n)%n]:pts[clamp(i,0,n-1)];
+/* ---- per-node types & Bezier arms ----
+   p.nt[i] : "s" smooth (collinear arms) | "c" corner (independent/sharp)
+   p.h[i]  : null (auto) | [[inX,inY],[outX,outY]] absolute control points     */
+function nodeType(p,i){return (p.nt&&p.nt[i])||(p.smooth?"s":"c");}
+function nodeH(p,i){return p.h?p.h[i]:null;}
+function ensureMeta(p){
+  if(!p.nt)p.nt=p.pts.map(()=>p.smooth?"s":"c");
+  if(!p.h)p.h=p.pts.map(()=>null);
+  while(p.nt.length<p.pts.length)p.nt.push(p.smooth?"s":"c");
+  while(p.h.length<p.pts.length)p.h.push(null);
+  p.nt.length=p.pts.length;p.h.length=p.pts.length;
+}
+// control points for the segment from node i to node i+1
+function segCtrl(p,i){
+  const pts=p.pts,n=pts.length;
+  const P=k=>p.closed?pts[(k%n+n)%n]:pts[clamp(k,0,n-1)];
+  const j=p.closed?(i+1)%n:i+1;
+  const auto=crControls(P(i-1),P(i),P(i+1),P(i+2));
+  const hi=nodeH(p,i),hj=nodeH(p,j);
+  const c1 = hi&&hi[1] ? hi[1] : (nodeType(p,i)==="c"&&!hi ? P(i).slice()   : auto[0]);
+  const c2 = hj&&hj[0] ? hj[0] : (nodeType(p,j)==="c"&&!hj ? P(i+1).slice() : auto[1]);
+  return [c1,c2];
+}
+// default (auto) arm positions for a node, used when converting corner -> smooth
+function armsOf(p,i){
+  const h=nodeH(p,i);
+  if(h)return {in:h[0]?h[0].slice():null, out:h[1]?h[1].slice():null};
+  if(nodeType(p,i)==="c")return {in:null,out:null};      // sharp corner shows no arms
+  const a=autoArms(p,i);
+  const open=!p.closed;
+  return {in: (open&&i===0)?null:a[0], out:(open&&i===p.pts.length-1)?null:a[1]};
+}
+function autoArms(p,i){
+  const pts=p.pts,n=pts.length;
+  const P=k=>p.closed?pts[(k%n+n)%n]:pts[clamp(k,0,n-1)];
+  const outC=crControls(P(i-1),P(i),P(i+1),P(i+2))[0];
+  const inC =crControls(P(i-2),P(i-1),P(i),P(i+1))[1];
+  return [inC.slice(),outC.slice()];
+}
+function catmullSample(ptsIn,closed,tolMM=0.25){ // legacy entry (plain point list)
+  return flattenPath({pts:dedupe(ptsIn),closed,smooth:true},tolMM);
+}
+function flattenPath(p,tolMM=0.25){
+  const pts=p.pts;
+  if(pts.length<2)return pts.map(q=>q.slice());
   const out=[pts[0].slice()];
-  const segN=closed?n:n-1;
+  const segN=p.closed?pts.length:pts.length-1;
   for(let i=0;i<segN;i++){
-    const p1=P(i),p2=P(i+1);
-    const [c1,c2]=crControls(P(i-1),p1,p2,P(i+2));
+    const j=p.closed?(i+1)%pts.length:i+1;
+    const p1=pts[i],p2=pts[j];
+    const [c1,c2]=segCtrl(p,i);
+    const straight = c1[0]===p1[0]&&c1[1]===p1[1]&&c2[0]===p2[0]&&c2[1]===p2[1];
+    if(straight){out.push(p2.slice());continue;}
     const steps=clamp(Math.ceil(dist(p1,p2)/Math.max(tolMM,.05)),2,64);
-    for(let s=1;s<=steps;s++){
-      const t=s/steps,u=1-t;
+    for(let t,u,sI=1;sI<=steps;sI++){
+      t=sI/steps;u=1-t;
       out.push([
         u*u*u*p1[0]+3*u*u*t*c1[0]+3*u*t*t*c2[0]+t*t*t*p2[0],
-        u*u*u*p1[1]+3*u*u*t*c1[1]+3*u*t*t*c2[1]+t*t*t*p2[1]
-      ]);
+        u*u*u*p1[1]+3*u*u*t*c1[1]+3*u*t*t*c2[1]+t*t*t*p2[1]]);
     }
   }
   return out;
 }
-function pathToD(p){ // SVG "d" — centripetal Catmull-Rom → cubic Bézier if smooth
-  const pts=p.smooth?dedupe(p.pts):p.pts;if(!pts.length)return"";
-  if(!p.smooth||pts.length<3){
-    let d=`M${fmt(pts[0][0],3)} ${fmt(pts[0][1],3)}`;
-    for(let i=1;i<pts.length;i++)d+=`L${fmt(pts[i][0],3)} ${fmt(pts[i][1],3)}`;
-    return d+(p.closed?"Z":"");
-  }
-  const n=pts.length,P=i=>p.closed?pts[(i%n+n)%n]:pts[clamp(i,0,n-1)];
+function pathToD(p){
+  const pts=p.pts;if(!pts.length)return"";
   let d=`M${fmt(pts[0][0],3)} ${fmt(pts[0][1],3)}`;
-  const segN=p.closed?n:n-1;
+  if(pts.length<2)return d;
+  const segN=p.closed?pts.length:pts.length-1;
   for(let i=0;i<segN;i++){
-    const [c1,c2]=crControls(P(i-1),P(i),P(i+1),P(i+2));
-    const p2=P(i+1);
-    d+=`C${fmt(c1[0],3)} ${fmt(c1[1],3)} ${fmt(c2[0],3)} ${fmt(c2[1],3)} ${fmt(p2[0],3)} ${fmt(p2[1],3)}`;
+    const j=p.closed?(i+1)%pts.length:i+1;
+    const p2=pts[j],[c1,c2]=segCtrl(p,i);
+    if(c1[0]===pts[i][0]&&c1[1]===pts[i][1]&&c2[0]===p2[0]&&c2[1]===p2[1])
+      d+=`L${fmt(p2[0],3)} ${fmt(p2[1],3)}`;
+    else
+      d+=`C${fmt(c1[0],3)} ${fmt(c1[1],3)} ${fmt(c2[0],3)} ${fmt(c2[1],3)} ${fmt(p2[0],3)} ${fmt(p2[1],3)}`;
   }
   return d+(p.closed?"Z":"");
 }
-function flatPts(p,tol=0.25){ // geometry used for hit-tests, stats, DXF, G-code
-  let pts=p.smooth?catmullSample(p.pts,p.closed,tol):p.pts.slice();
-  if(p.closed&&(pts[0][0]!==pts[pts.length-1][0]||pts[0][1]!==pts[pts.length-1][1]))
+function flatPts(p,tol=0.25){ // geometry for hit-tests, stats, DXF, G-code
+  let pts=flattenPath(p,tol);
+  if(p.closed&&pts.length&&(pts[0][0]!==pts[pts.length-1][0]||pts[0][1]!==pts[pts.length-1][1]))
     pts=pts.concat([pts[0].slice()]);
   return pts;
 }
@@ -625,9 +669,37 @@ function renderImages(){
     if(im.bright!==1)f+=`brightness(${im.bright}) `;
     if(im.contrast!==1)f+=`contrast(${im.contrast}) `;
     if(im.invert)f+="invert(1) ";
+    const chId=channelFilter(im);
+    if(chId)f+=`url(#${chId}) `;
     if(f)node.setAttribute("style",`filter:${f.trim()}`);
     g.dataset.imageId=im.id;
   }
+}
+/* Channel separation. R/G/B toggles keep or drop colour channels; "Black" renders
+   whatever remains as a single black plate — i.e. the separation you'd actually pen. */
+function channelFilter(im){
+  const c=im.ch;
+  if(!c)return null;
+  const on={r:c.r!==false,g:c.g!==false,b:c.b!==false,k:!!c.k};
+  if(on.r&&on.g&&on.b&&!on.k)return null;               // untouched
+  const id="chf_"+im.id;
+  let defs=svg.querySelector("defs#ptsdefs");
+  if(!defs){defs=el("defs",{id:"ptsdefs"});svg.insertBefore(defs,svg.firstChild);}
+  let flt=defs.querySelector("#"+id);
+  if(flt)flt.remove();
+  flt=el("filter",{id,"color-interpolation-filters":"sRGB"},defs);
+  const L={r:.2126,g:.7152,b:.0722};
+  let m;
+  if(on.k){
+    const tot=(on.r?L.r:0)+(on.g?L.g:0)+(on.b?L.b:0);
+    const w=k=>tot>0&&on[k]?L[k]/tot:0;
+    const row=[w("r"),w("g"),w("b"),0,0];
+    m=[...row,...row,...row,0,0,0,1,0];                 // grey plate
+  }else{
+    m=[on.r?1:0,0,0,0,0, 0,on.g?1:0,0,0,0, 0,0,on.b?1:0,0,0, 0,0,0,1,0];
+  }
+  el("feColorMatrix",{type:"matrix",values:m.join(" ")},flt);
+  return id;
 }
 function renderPaths(){
   gPaths.innerHTML="";
@@ -695,9 +767,25 @@ function renderOverlay(){
     if(p){
       el("path",{d:pathToD(p),fill:"none",stroke:"rgba(47,125,209,.4)",
         "stroke-width":1,"vector-effect":"non-scaling-stroke"},gOverlay);
+      // Bezier arms for selected nodes (Illustrator style)
+      for(const i of sel.nodes){
+        if(i<0||i>=p.pts.length)continue;
+        const arms=armsOf(p,i);
+        for(const side of ["in","out"]){
+          const h=arms[side];if(!h)continue;
+          el("line",{class:"arm",x1:p.pts[i][0],y1:p.pts[i][1],x2:h[0],y2:h[1]},gOverlay);
+          const c=el("circle",{class:"armdot",cx:h[0],cy:h[1],r:5/view.zoom},gOverlay);
+          c.dataset.arm=side;c.dataset.armNode=i;
+        }
+      }
       p.pts.forEach((pt,i)=>{
-        const n=el("circle",{class:"node"+(sel.nodes.has(i)?" sel":""),
-          cx:pt[0],cy:pt[1],r:5.5/view.zoom},gOverlay);
+        const corner=nodeType(p,i)==="c";
+        const r=5.5/view.zoom;
+        const n=corner
+          ? el("rect",{class:"node"+(sel.nodes.has(i)?" sel":""),
+              x:pt[0]-r,y:pt[1]-r,width:r*2,height:r*2},gOverlay)
+          : el("circle",{class:"node"+(sel.nodes.has(i)?" sel":""),
+              cx:pt[0],cy:pt[1],r},gOverlay);
         n.dataset.node=i;
       });
     }
@@ -933,6 +1021,7 @@ svg.addEventListener("pointermove",e=>{
   if(action.kind==="shape"){action.b=snapPt(pt);drawShapePreview();return;}
   if(action.kind==="erase"){eraseAt(pt);return;}
   if(action.kind==="nodeDrag"){nodeDrag(pt);return;}
+  if(action.kind==="armDrag"){armDrag(pt);return;}
   if(action.kind==="marquee"){marquee.b=pt;renderOverlay();return;}
   if(action.kind==="move"){moveDrag(pt);return;}
   if(action.kind==="scale"){scaleDrag(pt);return;}
@@ -959,6 +1048,7 @@ function endPointer(e){
     case "shape": finishShape();break;
     case "erase": if(action.hit)renderPaths(); action=null;break;
     case "nodeDrag": finishNodeDrag();break;
+    case "armDrag": action=null;renderPaths();break;
     case "marquee": finishMarquee();break;
     case "move": case "scale": case "rotate": case "imgmove":
       renderPaths();renderImages();renderOverlay();renderPanel();action=null;break;
@@ -1005,31 +1095,35 @@ function gaussianSmooth(pts,h,sigma){ // binomial passes ≈ Gaussian of the req
   }
   return p;
 }
-function blendJunction(pts,idx,sigma,outSpacing){ // re-smooth only a window around a join point
-  const W=Math.max(3,sigma*2.5); // mm each side of the junction
-  let a=idx,acc=0;
-  while(a>0&&acc<W){acc+=dist(pts[a-1],pts[a]);a--;}
-  let b=idx;acc=0;
-  while(b<pts.length-1&&acc<W){acc+=dist(pts[b],pts[b+1]);b++;}
-  const seg=dedupe(pts.slice(a,b+1));
-  if(seg.length<3)return pts;
-  const h=0.3;
-  let s=resampleUniform(seg,h);
-  s=gaussianSmooth(s,h,Math.max(sigma,0.8));
-  s=resampleUniform(s,Math.max(outSpacing,0.8));
-  return pts.slice(0,a).concat(s,pts.slice(b+1));
+function blendJunction(pts,idx,sigma){
+  // Smooth a few nodes either side of a join by MOVING them, never by resampling.
+  // The old version resampled the window, turning a clean 2-node corner into dozens.
+  const win=3;                                   // nodes affected each side
+  const a=Math.max(1,idx-win), b=Math.min(pts.length-2,idx+win);
+  if(b<a)return pts;
+  const passes=clamp(Math.round(sigma*2),1,6);
+  const out=pts.map(q=>q.slice());
+  for(let k=0;k<passes;k++){
+    const prev=out.map(q=>q.slice());
+    for(let i=a;i<=b;i++){
+      const w=1-Math.abs(i-idx)/(win+1);         // taper so the effect fades out
+      out[i][0]=prev[i][0]+((prev[i-1][0]+2*prev[i][0]+prev[i+1][0])/4-prev[i][0])*w;
+      out[i][1]=prev[i][1]+((prev[i-1][1]+2*prev[i][1]+prev[i+1][1])/4-prev[i][1])*w;
+    }
+  }
+  return out;
 }
 function startStroke(pt,byTouch){
   const L=activeLayer();
   if(!L){toast("Add a vector layer first");return;}
-  if(L.locked){toast(`“${L.name}” is locked`);return;}
+  if(L.locked){toast(`\u201c${L.name}\u201d is locked`);return;}
   action={kind:"stroke",raw:[pt.slice()],ema:pt.slice(),live:[pt.slice()],cur:pt.slice(),byTouch};
   liveEl=el("path",{fill:"none",stroke:L.color,"stroke-width":state.stroke.width,
     "stroke-linecap":"round","stroke-linejoin":"round",opacity:.9},gLive);
 }
 function strokeMove(pt,e){
   const s=action,a=smoothingAlpha();
-  // pull every high-rate sample the OS coalesced into this event (Apple Pencil ≈240 Hz)
+  // pull every high-rate sample the OS coalesced into this event (Apple Pencil ~240 Hz)
   let samples=null;
   if(e&&typeof e.getCoalescedEvents==="function"){
     const ce=e.getCoalescedEvents();
@@ -1043,7 +1137,7 @@ function strokeMove(pt,e){
     s.ema=[s.ema[0]+(q[0]-s.ema[0])*a, s.ema[1]+(q[1]-s.ema[1])*a];
     if(dist(s.live[s.live.length-1],s.ema)>=state.stroke.spacing)s.live.push(s.ema.slice());
   }
-  // live preview: stabilised line that always catches up to the actual pointer — no lag
+  // live preview: stabilised line that always catches up to the pointer — no lag
   let d=`M${s.live[0][0]} ${s.live[0][1]}`;
   for(let i=1;i<s.live.length;i++)d+=`L${s.live[i][0]} ${s.live[i][1]}`;
   d+=`L${s.cur[0]} ${s.cur[1]}`;
@@ -1355,6 +1449,19 @@ function nodeDown(pt,e){
   const p=sel.nodePath?state.paths.find(q=>q.id===sel.nodePath):null;
   if(p){
     const r=10/view.zoom;
+    // arms take priority over the node itself
+    for(const i of sel.nodes){
+      const arms=armsOf(p,i);
+      for(const side of ["in","out"]){
+        const h=arms[side];
+        if(h&&dist(pt,h)<r){
+          pushHistory();ensureMeta(p);
+          if(!p.h[i])p.h[i]=[arms.in?arms.in.slice():null, arms.out?arms.out.slice():null];
+          action={kind:"armDrag",path:p,idx:i,side};
+          return;
+        }
+      }
+    }
     // existing node?
     for(let i=0;i<p.pts.length;i++){
       if(dist(pt,p.pts[i])<r){
@@ -1363,7 +1470,7 @@ function nodeDown(pt,e){
         pushHistory();
         action={kind:"nodeDrag",path:p,idx:i,start:pt.slice(),
           orig:p.pts.map(q=>q.slice())};
-        renderOverlay();return;
+        renderOverlay();renderPanel();return;
       }
     }
     // insert node on a segment
@@ -1377,6 +1484,8 @@ function nodeDown(pt,e){
         if(d<bd){bd=d;bi=i;}
       }
       p.pts.splice(bi,0,snapPt(pt));
+      if(p.nt)p.nt.splice(bi,0,p.smooth?"s":"c");
+      if(p.h)p.h.splice(bi,0,null);
       sel.nodes.clear();sel.nodes.add(bi);
       action={kind:"nodeDrag",path:p,idx:bi,start:pt.slice(),orig:p.pts.map(q=>q.slice())};
       renderPaths();return;
@@ -1385,7 +1494,7 @@ function nodeDown(pt,e){
   // select a different path for node editing
   const hit=hitPath(pt);
   sel.nodePath=hit?hit.id:null;sel.nodes.clear();
-  renderOverlay();
+  renderOverlay();renderPanel();
   if(hit)showTab("object",true);
 }
 function nodeDrag(pt){
@@ -1468,10 +1577,42 @@ function finishNodeDrag(){
   }
   renderPaths();
 }
+function armDrag(pt){
+  const {path:p,idx:i,side}=action;
+  ensureMeta(p);
+  const node=p.pts[i];
+  if(!p.h[i])p.h[i]=[null,null];
+  p.h[i][side==="in"?0:1]=pt.slice();
+  if(nodeType(p,i)==="s"){
+    // smooth node: opposite arm stays collinear, keeping its own length
+    const other=side==="in"?1:0;
+    const cur=p.h[i][other];
+    const dx=pt[0]-node[0],dy=pt[1]-node[1],len=Math.hypot(dx,dy);
+    if(len>1e-6){
+      const prevLen=cur?dist(cur,node):len;
+      p.h[i][other]=[node[0]-dx/len*prevLen, node[1]-dy/len*prevLen];
+    }
+  }
+  renderPaths();
+}
+function setNodeType(type){
+  const p=state.paths.find(q=>q.id===sel.nodePath);
+  if(!p||!sel.nodes.size)return;
+  pushHistory();ensureMeta(p);
+  for(const i of sel.nodes){
+    p.nt[i]=type;
+    if(type==="c")p.h[i]=null;             // sharp: drop the arms entirely
+    else{const a=autoArms(p,i);p.h[i]=[a[0],a[1]];}  // smooth: restore curve arms
+  }
+  renderPaths();renderPanel();
+  toast(type==="c"?"Sharp corner":"Smooth curve — drag the arms to shape it");
+}
 function deleteNodes(){
   const p=state.paths.find(q=>q.id===sel.nodePath);
   if(!p||!sel.nodes.size)return;
   pushHistory();
+  if(p.nt)p.nt=p.nt.filter((_,i)=>!sel.nodes.has(i));
+  if(p.h)p.h=p.h.filter((_,i)=>!sel.nodes.has(i));
   p.pts=p.pts.filter((_,i)=>!sel.nodes.has(i));
   sel.nodes.clear();
   if(p.pts.length<2)state.paths=state.paths.filter(q=>q.id!==p.id);
@@ -1573,6 +1714,26 @@ function renderPanel(){
       add(slider("Brightness",im.bright,0.3,2.2,0.01,v=>{im.bright=v;renderImages();}));
       add(slider("Contrast",im.contrast,0.3,2,0.01,v=>{im.contrast=v;renderImages();}));
       add(slider("Rotate °",im.rot,-180,180,1,v=>{im.rot=v;renderImages();renderOverlay();},v=>fmt(v,0)));
+      // channel separation toggles
+      if(!im.ch)im.ch={r:true,g:true,b:true,k:false};
+      add(`<div class="sect" style="margin-top:6px"><h3>Channels</h3></div>`);
+      const rc=document.createElement("div");rc.className="btnrow";
+      const chBtn=(key,label,col)=>{
+        const b=document.createElement("button");
+        const on=key==="k"?!!im.ch.k:im.ch[key]!==false;
+        b.className="sbtn"+(on?" on":"");b.textContent=label;
+        if(col&&on)b.style.cssText=`border-color:${col};color:${col}`;
+        b.addEventListener("click",()=>{
+          pushHistory();
+          im.ch[key]=key==="k"?!im.ch.k:!(im.ch[key]!==false);
+          renderImages();renderPanel();
+        });
+        rc.appendChild(b);
+      };
+      chBtn("r","R","#e2564f");chBtn("g","G","#43b56b");chBtn("b","B","#4a86e8");
+      chBtn("k","Black");
+      add(rc);
+      add(`<p class="hint">Turn channels off to isolate a colour, then switch <b>Black</b> on to view that separation as a single black plate — handy for planning one pen per colour.</p>`);
       const r1=document.createElement("div");r1.className="btnrow";
       const mk=(txt,fn,cls="sbtn")=>{const b=document.createElement("button");b.className=cls;
         b.textContent=txt;b.addEventListener("click",fn);r1.appendChild(b);};
@@ -1622,14 +1783,41 @@ function renderPanel(){
         renderPaths();});
       add(lay);
       if(ui.tool==="node"&&sel.nodes.size){
+        const pth=state.paths.find(q=>q.id===sel.nodePath);
+        const cur=pth?nodeType(pth,[...sel.nodes][0]):"s";
+        add(`<div class="sect" style="margin-top:6px"><h3>${sel.nodes.size} node${sel.nodes.size>1?"s":""} selected</h3></div>`);
         const r3=document.createElement("div");r3.className="btnrow";
-        const b=document.createElement("button");b.className="sbtn danger";
-        b.textContent=`Delete ${sel.nodes.size} node${sel.nodes.size>1?"s":""}`;
-        b.addEventListener("click",deleteNodes);r3.appendChild(b);add(r3);
+        const nb=(txt,type)=>{const b=document.createElement("button");
+          b.className="sbtn"+(cur===type?" on":"");b.textContent=txt;
+          b.addEventListener("click",()=>setNodeType(type));r3.appendChild(b);};
+        nb("⌒ Smooth","s");
+        nb("⌐ Corner","c");
+        const db=document.createElement("button");db.className="sbtn danger";
+        db.textContent="Delete";db.addEventListener("click",deleteNodes);r3.appendChild(db);
+        add(r3);
+        add(`<p class="hint">Smooth nodes show two arms — drag either one to change how much the curve bends; the opposite arm follows to keep the curve flowing. Corner nodes give a sharp point.</p>`);
       }
     }else{
-      add(`<div class="sect"><h3>Nothing selected</h3></div>
-      <p class="hint">Use <b>Select</b> to tap a path or image, or drag on empty paper to marquee-select. With the <b>Nodes</b> tool, tap a path to edit its points — tap a segment to insert one.</p>`);
+      if(ui.tool==="node"&&sel.nodePath&&state.paths.find(q=>q.id===sel.nodePath)){
+        const pth=state.paths.find(q=>q.id===sel.nodePath);
+        add(`<div class="sect"><h3>Editing nodes</h3></div>`);
+        add(`<p class="hint" style="margin-bottom:10px">${pth.pts.length} nodes${sel.nodes.size?` \u00b7 ${sel.nodes.size} selected`:" \u00b7 tap a node to select it"}</p>`);
+        if(sel.nodes.size){
+          const cur=nodeType(pth,[...sel.nodes][0]);
+          const r=document.createElement("div");r.className="btnrow";
+          const nb=(txt,type)=>{const b=document.createElement("button");
+            b.className="sbtn"+(cur===type?" on":"");b.textContent=txt;
+            b.addEventListener("click",()=>setNodeType(type));r.appendChild(b);};
+          nb("\u2312 Smooth","s"); nb("\u2310 Corner","c");
+          const db=document.createElement("button");db.className="sbtn danger";
+          db.textContent="Delete";db.addEventListener("click",deleteNodes);r.appendChild(db);
+          add(r);
+          add(`<p class="hint">Smooth nodes show two arms \u2014 drag either to change how much the curve bends; the opposite arm follows to keep the line flowing. Corner nodes give a sharp point.</p>`);
+        }
+      }else{
+        add(`<div class="sect"><h3>Nothing selected</h3></div>
+        <p class="hint">Use <b>Select</b> to tap a path or image, or drag on empty paper to marquee-select. With the <b>Nodes</b> tool, tap a path to edit its points \u2014 tap a segment to insert one.</p>`);
+      }
     }
   }
 
@@ -1849,7 +2037,8 @@ function importImageFile(file){
       const id=uid();
       imageStore[id]=rd.result;
       const im={id,name:file.name||"Image",w0:img.naturalWidth,h0:img.naturalHeight,
-        x:0,y:0,scale:1,rot:0,flipX:false,flipY:false,gray:0,bright:1,contrast:1,invert:false};
+        x:0,y:0,scale:1,rot:0,flipX:false,flipY:false,gray:0,bright:1,contrast:1,invert:false,
+        ch:{r:true,g:true,b:true,k:false}};
       fitImageToPage(im);
       state.images.push(im);
       state.layers.push({id:uid(),type:"image",imageId:id,name:im.name.replace(/\.[^.]+$/,""),
@@ -2201,7 +2390,7 @@ for(const g of ["gesturestart","gesturechange","gestureend"])
   document.addEventListener(g,e=>e.preventDefault(),{passive:false});
 // only the drawing surface blocks native scrolling — blocking it document-wide
 // stopped Apple Pencil taps from producing clicks on buttons
-document.getElementById("canvaswrap").addEventListener("touchmove",e=>{
+document.getElementById("svg").addEventListener("touchmove",e=>{
   e.preventDefault();
 },{passive:false});
 document.addEventListener("dblclick",e=>e.preventDefault());
