@@ -162,6 +162,9 @@ textarea.cmd{width:100%;font-family:var(--mono);font-size:12px;background:var(--
   height:52px;padding:0 20px 0 16px;border-radius:26px;background:var(--pen);color:#0d2620;
   font-weight:600;font-size:15px;box-shadow:var(--shadow);touch-action:manipulation}
 #imgConfirm.show{display:flex}
+.tbtn.hint,#panelToggleFab.hint{position:relative}
+.tbtn.hint::after,#panelToggleFab.hint::after{content:"";position:absolute;top:6px;right:6px;
+  width:8px;height:8px;border-radius:50%;background:var(--pen);box-shadow:0 0 0 2px var(--panel)}
 #imgConfirm svg{width:22px;height:22px}
 #toast{position:fixed;left:50%;bottom:70px;transform:translateX(-50%) translateY(20px);background:var(--panel2);
   border:1px solid var(--line2);border-radius:10px;padding:10px 16px;font-size:13px;opacity:0;
@@ -570,7 +573,7 @@ let ui={tool:"draw",panelTab:"stroke",plotPreview:false,fingerDraw:true,
 function defaultState(name="Untitled trace",w=210,h=297,margin=10){
   return {
     name,page:{w,h,margin,grid:10,gridMinor:5,showGrid:false,snap:false},
-    stroke:{width:0.4,smoothing:"medium",simplify:0.25,color:null,spacing:0.35,minLen:1.2,joinTol:2.5},
+    stroke:{width:0.4,smoothMM:0.4,simplify:0.08,color:null,spacing:0.2,minLen:1.2,joinTol:2.5},
     machine:{feed:2500,travel:6000,penUp:"M3 S90",penDown:"M3 S30",upDelay:0.25,downDelay:0.25,
       home:true,precision:2,flipY:true},
     layers:[{id:uid(),type:"vector",name:"Layer 1",color:"#1a1a1a",visible:true,locked:false,
@@ -664,14 +667,25 @@ function renderImages(){
     const node=el("image",{x:-im.w0/2,y:-im.h0/2,width:im.w0,height:im.h0,
       preserveAspectRatio:"none",opacity:L.opacity},g);
     node.setAttribute("href",src);
+    // CSS shorthand filters go on the <image>; the channel feColorMatrix goes on the
+    // wrapping <g> as a real SVG attribute. Mixing url() into the CSS filter list is
+    // unreliable in Safari, which is why channel toggles appeared to do nothing.
+    // Channel matrix goes on the <image> so it applies FIRST; the tonal CSS filters
+    // go on the wrapping <g> and apply after. When channels are isolated we drop the
+    // greyscale term — otherwise Trace mode's 100% greyscale would erase the very
+    // separation the user asked to see.
+    const chId=channelFilter(im);
+    if(chId)node.setAttribute("filter",`url(#${chId})`);
+    else node.removeAttribute("filter");
+    const isolated=chId&&!(im.ch&&im.ch.k);
     let f="";
-    if(im.gray>0)f+=`grayscale(${im.gray}) `;
+    if(im.gray>0&&!isolated)f+=`grayscale(${im.gray}) `;
     if(im.bright!==1)f+=`brightness(${im.bright}) `;
     if(im.contrast!==1)f+=`contrast(${im.contrast}) `;
     if(im.invert)f+="invert(1) ";
-    const chId=channelFilter(im);
-    if(chId)f+=`url(#${chId}) `;
-    if(f)node.setAttribute("style",`filter:${f.trim()}`);
+    if(f)g.setAttribute("style",`filter:${f.trim()}`);
+    else g.removeAttribute("style");
+    node.removeAttribute("style");
     g.dataset.imageId=im.id;
   }
 }
@@ -684,7 +698,10 @@ function channelFilter(im){
   if(on.r&&on.g&&on.b&&!on.k)return null;               // untouched
   const id="chf_"+im.id;
   let defs=svg.querySelector("defs#ptsdefs");
-  if(!defs){defs=el("defs",{id:"ptsdefs"});svg.insertBefore(defs,svg.firstChild);}
+  if(!defs||!defs.isConnected){
+    defs=el("defs",{id:"ptsdefs"});
+    svg.insertBefore(defs,svg.firstChild);
+  }
   let flt=defs.querySelector("#"+id);
   if(flt)flt.remove();
   flt=el("filter",{id,"color-interpolation-filters":"sRGB"},defs);
@@ -726,19 +743,23 @@ function renderAll(){renderPage();renderImages();renderPaths();}
 
 /* ---------------- Overlay: selection box, nodes, marquee ---------------- */
 let marquee=null;
+function imageLocked(im){
+  const L=state.layers.find(l=>l.imageId===im.id);
+  return !!(L&&L.locked);
+}
 function selBBox(){
   let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9,has=false;
   for(const id of sel.paths){const p=state.paths.find(q=>q.id===id);if(!p)continue;
     const b=pathBBox(p);x0=Math.min(x0,b.x0);y0=Math.min(y0,b.y0);
     x1=Math.max(x1,b.x1);y1=Math.max(y1,b.y1);has=true;}
-  if(sel.image){const im=sel.image;
+  if(sel.image&&!imageLocked(sel.image)){const im=sel.image;
     const hw=im.w0*im.scale/2,hh=im.h0*im.scale/2,r=Math.hypot(hw,hh);
     x0=Math.min(x0,im.x-r);y0=Math.min(y0,im.y-r);x1=Math.max(x1,im.x+r);y1=Math.max(y1,im.y+r);has=true;}
   return has?{x0,y0,x1,y1}:null;
 }
 function updateImgConfirm(){
   const b=document.getElementById("imgConfirm");
-  if(b)b.classList.toggle("show",!!sel.image);
+  if(b)b.classList.toggle("show",!!sel.image&&!imageLocked(sel.image));
 }
 function renderOverlay(){
   updateImgConfirm();
@@ -930,7 +951,7 @@ function setTool(t){
   $$("#dock .dbtn").forEach(b=>b.classList.toggle("on",b.dataset.tool===t));
   renderOverlay();
   if(t==="draw"||t==="pen")showTab("stroke");
-  if(window.innerWidth<=820)$("#dock").classList.remove("open");
+  if(tier()==="C")$("#dock").classList.remove("open");   // only the phone tray auto-closes
 }
 svg.addEventListener("contextmenu",e=>e.preventDefault());
 
@@ -1075,12 +1096,13 @@ let liveEl=null;
 function smoothingAlpha(){ // light stabilisation only — never allowed to feel laggy
   return {none:1,light:.7,medium:.5,strong:.35}[state.stroke.smoothing]??.5;
 }
-const SMOOTH_PROFILE={ // sigma = smoothing radius in mm; out = node spacing of the finished stroke
-  none:  {sigma:0,   out:0},
-  light: {sigma:0.6, out:0.9},
-  medium:{sigma:1.3, out:1.3},
-  strong:{sigma:2.6, out:1.8}
-};
+// Smoothing is a radius in millimetres. Detail finer than this radius is what gets
+// rounded away, so keep it small for detailed tracing and large for flowing contours.
+const LEGACY_SMOOTH={none:0,light:0.3,medium:0.6,strong:1.2};
+function smoothSigma(){
+  if(typeof state.stroke.smoothMM==="number")return state.stroke.smoothMM;
+  return LEGACY_SMOOTH[state.stroke.smoothing]??0.6;   // migrate old projects
+}
 function gaussianSmooth(pts,h,sigma){ // binomial passes ≈ Gaussian of the requested radius
   if(sigma<=0||pts.length<3)return pts;
   const passes=clamp(Math.round(2*(sigma/h)*(sigma/h)),1,600);
@@ -1151,19 +1173,18 @@ function finishStroke(){
   if(dist(raw[raw.length-1],s.cur)>0.01)raw.push(s.cur.slice());
   if(raw.length<2||pathLength(raw)<state.stroke.minLen)return; // ignore accidental marks
   pushHistory();
-  // pipeline: uniform resample → Gaussian smooth (radius in mm) → even output spacing → gentle RDP
-  const prof=SMOOTH_PROFILE[state.stroke.smoothing]||SMOOTH_PROFILE.medium;
-  let pts;
-  if(prof.sigma>0){
-    const h=0.3;
-    pts=resampleUniform(dedupe(raw),h);
-    pts=gaussianSmooth(pts,h,prof.sigma);
-    pts=resampleUniform(pts,prof.out);
-    // gentle simplification only — heavy RDP would make node spacing uneven again
-    pts=rdp(pts,Math.min(Math.max(0.02,state.stroke.simplify),prof.out*0.12));
-  }else{
-    pts=rdp(dedupe(raw),Math.max(0.02,state.stroke.simplify));
+  // pipeline: fine uniform resample -> Gaussian smooth (radius in mm) -> adaptive RDP.
+  // The old version resampled the OUTPUT to 0.9-1.8mm spacing, which is what destroyed
+  // fine detail. Centripetal curves cope with uneven spacing, so RDP can now place
+  // nodes where the line actually bends and strip them from straight runs.
+  const sigma=smoothSigma();
+  let pts=dedupe(raw);
+  if(sigma>0&&pts.length>2){
+    const h=clamp(sigma/4,0.05,0.3);
+    pts=resampleUniform(pts,h);
+    pts=gaussianSmooth(pts,h,sigma);
   }
+  pts=rdp(pts,Math.max(0.01,state.stroke.simplify));
   const closed=dist(pts[0],pts[pts.length-1])<2.5&&pathLength(pts)>10;
   if(closed)pts=pts.slice(0,-1);
   // auto-continue: if this stroke starts near an open endpoint on the active layer, extend that path
@@ -1182,8 +1203,8 @@ function finishStroke(){
       if(atStart)best.pts.reverse();       // walk in from the near end
       const jIdx=best.pts.length-1;
       best.pts=best.pts.concat(pts);
-      if(prof.sigma>0)best.pts=blendJunction(best.pts,jIdx,prof.sigma,prof.out);
-      best.smooth=best.smooth||state.stroke.smoothing!=="none";
+      if(sigma>0)best.pts=blendJunction(best.pts,jIdx,Math.max(sigma,0.5));
+      best.smooth=true;
       // if the extended line now meets its own start, close the loop
       if(best.pts.length>4&&dist(best.pts[0],best.pts[best.pts.length-1])<jt){
         best.pts=best.pts.slice(0,-1);best.closed=true;
@@ -1194,7 +1215,7 @@ function finishStroke(){
     }
   }
   state.paths.push({id:uid(),layer:activeLayer().id,pts,closed,
-    smooth:state.stroke.smoothing!=="none",width:state.stroke.width});
+    smooth:true,width:state.stroke.width});
   renderPaths();
 }
 
@@ -1328,6 +1349,7 @@ function selectDown(pt,e){
     }
     if(pt[0]>=b.x0&&pt[0]<=b.x1&&pt[1]>=b.y0&&pt[1]<=b.y1&&(sel.paths.size||sel.image)){
       pushHistory();
+      if(sel.image&&!sel.paths.size&&imageLocked(sel.image))return;   // locked: ignore drag
       action={kind:sel.image&&!sel.paths.size?"imgmove":"move",start:pt.slice(),orig:captureSel()};
       return;
     }
@@ -1567,8 +1589,8 @@ function finishNodeDrag(){
       A[A.length-1]=mid;
       const j=A.length-1;
       let pts=A.concat(B.slice(1));
-      const prof=SMOOTH_PROFILE[state.stroke.smoothing]||SMOOTH_PROFILE.medium;
-      if((p.smooth||q.smooth)&&prof.sigma>0)pts=blendJunction(pts,j,prof.sigma,prof.out);
+      const sg=smoothSigma();
+      if((p.smooth||q.smooth)&&sg>0)pts=blendJunction(pts,j,Math.max(sg,0.5));
       p.pts=pts;p.smooth=p.smooth||q.smooth;
       state.paths=state.paths.filter(x=>x!==q);
       sel.nodePath=p.id;sel.nodes.clear();
@@ -1662,8 +1684,15 @@ function showTab(t,reveal){
   ui.panelTab=t;
   $$("#paneltabs button").forEach(b=>b.classList.toggle("on",b.dataset.tab===t));
   renderPanel();
-  // deliberate acts (selecting, importing) surface the panel; switching tools must not
-  if(reveal&&tier()!=="A"&&!panelVisible())togglePanel(true);
+  // The panel never opens itself — selecting a tool or an object only switches which
+  // tab is showing. A dot on the panel button hints that there's something new there.
+  if(reveal&&!panelVisible())markPanelHint(true);
+  else if(panelVisible())markPanelHint(false);
+}
+function markPanelHint(on){
+  const b=$("#btnPanel"),f=$("#panelToggleFab");
+  if(b)b.classList.toggle("hint",on);
+  if(f)f.classList.toggle("hint",on);
 }
 $$("#paneltabs button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
 
@@ -1683,22 +1712,29 @@ function renderPanel(){
   if(ui.panelTab==="stroke"){
     add(`<div class="sect"><h3>Brush</h3></div>`);
     add(slider("Width mm",state.stroke.width,0.1,3,0.05,v=>{state.stroke.width=v;renderPaths();}));
-    const sm=document.createElement("div");sm.className="row";
-    sm.innerHTML=`<label>Smoothing</label><select>
-      <option value="none">None</option><option value="light">Light</option>
-      <option value="medium">Medium</option><option value="strong">Strong</option></select>`;
-    sm.querySelector("select").value=state.stroke.smoothing;
-    sm.querySelector("select").addEventListener("change",e=>state.stroke.smoothing=e.target.value);
-    add(sm);
-    add(slider("Simplify mm",state.stroke.simplify,0.02,1,0.01,v=>state.stroke.simplify=v));
-    add(slider("Point spacing",state.stroke.spacing,0.1,2,0.05,v=>state.stroke.spacing=v));
+    add(slider("Smoothing mm",smoothSigma(),0,2,0.05,v=>state.stroke.smoothMM=v));
+    const pre=document.createElement("div");pre.className="btnrow";
+    for(const [lbl,mm] of [["Fine detail",0.15],["Balanced",0.4],["Flowing",0.9],["Very smooth",1.6]]){
+      const b=document.createElement("button");
+      b.className="sbtn"+(Math.abs(smoothSigma()-mm)<0.03?" on":"");
+      b.textContent=lbl;
+      b.addEventListener("click",()=>{state.stroke.smoothMM=mm;
+        state.stroke.simplify=mm<=0.2?0.04:(mm<=0.5?0.08:0.15);
+        renderPanel();});
+      pre.appendChild(b);
+    }
+    add(pre);
+    add(slider("Detail mm",state.stroke.simplify,0.01,0.6,0.01,v=>state.stroke.simplify=v));
+    add(slider("Point spacing",state.stroke.spacing,0.05,1,0.05,v=>state.stroke.spacing=v));
     add(slider("Ignore < mm",state.stroke.minLen,0,5,0.1,v=>state.stroke.minLen=v));
     add(slider("Auto-join ≤ mm",state.stroke.joinTol??2.5,0,6,0.1,v=>state.stroke.joinTol=v));
     add(`<p class="hint">Start a stroke within the auto-join distance of a line's end and it continues that line — the connection is blended smooth, and meeting your own start point closes the loop. Set it to 0 to switch continuation off. The live line always sticks to your fingertip; smoothing is applied on lift.</p>`);
+    add(`<p class="hint"><b>Smoothing mm</b> is the size of wobble rounded away — detail finer than this is lost, so keep it low for intricate tracing. <b>Detail mm</b> is how far the finished line may stray from your stroke; lower keeps more nodes. Both are applied when you lift, so neither slows drawing.</p>`);
     add(`<div class="sect" style="margin-top:14px"><h3>Input</h3></div>`);
     const fd=document.createElement("div");fd.className="btnrow";
     const fb=document.createElement("button");
-    fb.className="sbtn"+(ui.fingerDraw?" on":"");fb.textContent="Finger drawing "+(ui.fingerDraw?"on":"off");
+    fb.className="sbtn"+(ui.fingerDraw?" on":"");
+    fb.textContent="Finger drawing "+(ui.fingerDraw?"on":"off");
     fb.addEventListener("click",()=>{ui.fingerDraw=!ui.fingerDraw;renderPanel();
       toast(ui.fingerDraw?"Fingers draw — two fingers still pan/zoom":"Fingers pan · Pencil/mouse draws");});
     fd.appendChild(fb);add(fd);
@@ -1708,7 +1744,18 @@ function renderPanel(){
   if(ui.panelTab==="object"){
     if(sel.image){
       const im=sel.image,L=state.layers.find(l=>l.imageId===im.id);
-      add(`<div class="sect"><h3>Image · ${L?L.name:""}</h3></div>`);
+      add(`<div class="sect"><h3>Image \u00b7 ${L?L.name:""}</h3></div>`);
+      if(L&&L.locked){
+        const lr=document.createElement("div");lr.className="btnrow";
+        lr.style.cssText="align-items:center";
+        const note=document.createElement("span");
+        note.className="hint";note.style.cssText="flex:1;margin:0";
+        note.textContent="Locked in place — settings below still apply.";
+        const ub=document.createElement("button");ub.className="sbtn";ub.textContent="Unlock";
+        ub.addEventListener("click",()=>{pushHistory();L.locked=false;
+          setTool("select");renderOverlay();renderPanel();toast("Unlocked — drag to reposition");});
+        lr.append(note,ub);add(lr);
+      }
       add(slider("Opacity",L.opacity,0.05,1,0.01,v=>{L.opacity=v;renderImages();}));
       add(slider("Greyscale",im.gray,0,1,0.01,v=>{im.gray=v;renderImages();}));
       add(slider("Brightness",im.bright,0.3,2.2,0.01,v=>{im.bright=v;renderImages();}));
@@ -1733,7 +1780,7 @@ function renderPanel(){
       chBtn("r","R","#e2564f");chBtn("g","G","#43b56b");chBtn("b","B","#4a86e8");
       chBtn("k","Black");
       add(rc);
-      add(`<p class="hint">Turn channels off to isolate a colour, then switch <b>Black</b> on to view that separation as a single black plate — handy for planning one pen per colour.</p>`);
+      add(`<p class="hint">Turn channels off to isolate a colour, then switch <b>Black</b> on to view that separation as a single black plate — handy for planning one pen per colour. Isolating a channel overrides Trace mode's greyscale so the colour stays visible.</p>`);
       const r1=document.createElement("div");r1.className="btnrow";
       const mk=(txt,fn,cls="sbtn")=>{const b=document.createElement("button");b.className=cls;
         b.textContent=txt;b.addEventListener("click",fn);r1.appendChild(b);};
@@ -1798,6 +1845,22 @@ function renderPanel(){
         add(`<p class="hint">Smooth nodes show two arms — drag either one to change how much the curve bends; the opposite arm follows to keep the curve flowing. Corner nodes give a sharp point.</p>`);
       }
     }else{
+      const AL=layerById(state.activeLayer);
+      if(AL&&AL.type==="vector"&&!(ui.tool==="node"&&sel.nodePath)){
+        const cnt=state.paths.filter(p=>p.layer===AL.id);
+        let nodes=0,len=0;
+        for(const p of cnt){nodes+=p.pts.length;len+=pathLength(flatPts(p,0.5));}
+        add(`<div class="sect"><h3>Layer \u00b7 ${AL.name}</h3></div>`);
+        add(`<p class="hint" style="margin-bottom:10px">${cnt.length} path${cnt.length===1?"":"s"} \u00b7 ${nodes} nodes \u00b7 ${Math.round(len)} mm${AL.locked?" \u00b7 locked":""}${AL.plot===false?" \u00b7 not plotted":""}</p>`);
+        const lr=document.createElement("div");lr.className="btnrow";
+        const lb=(txt,fn)=>{const b=document.createElement("button");b.className="sbtn";
+          b.textContent=txt;b.addEventListener("click",fn);lr.appendChild(b);};
+        lb(AL.locked?"Unlock":"Lock",()=>{pushHistory();AL.locked=!AL.locked;renderPanel();});
+        lb("Select all",()=>{sel.paths=new Set(cnt.map(p=>p.id));setTool("select");
+          renderPaths();showTab("object");});
+        add(lr);
+        add(`<p class="hint">This is the layer new strokes land on. Tap another layer in the Layers tab to switch.</p>`);
+      }
       if(ui.tool==="node"&&sel.nodePath&&state.paths.find(q=>q.id===sel.nodePath)){
         const pth=state.paths.find(q=>q.id===sel.nodePath);
         add(`<div class="sect"><h3>Editing nodes</h3></div>`);
@@ -1814,7 +1877,7 @@ function renderPanel(){
           add(r);
           add(`<p class="hint">Smooth nodes show two arms \u2014 drag either to change how much the curve bends; the opposite arm follows to keep the line flowing. Corner nodes give a sharp point.</p>`);
         }
-      }else{
+      }else if(!AL||AL.type!=="vector"){
         add(`<div class="sect"><h3>Nothing selected</h3></div>
         <p class="hint">Use <b>Select</b> to tap a path or image, or drag on empty paper to marquee-select. With the <b>Nodes</b> tool, tap a path to edit its points \u2014 tap a segment to insert one.</p>`);
       }
@@ -1955,10 +2018,14 @@ function renderLayersPanel(body){
         if(sel.image){sel.image=null;renderOverlay();}
         renderPanel();
       }else{
+        // a locked image can still be SELECTED to edit its properties —
+        // the lock only prevents dragging it around the canvas
         const im=state.images.find(m=>m.id===L.imageId);
         state.activeLayer=L.id;
-        if(im&&!L.locked){sel.paths.clear();sel.image=im;setTool("select");renderOverlay();renderPanel();}
-        else{renderPanel();toast("Image is locked — tap the padlock to unlock");}
+        sel.paths.clear();
+        if(im)sel.image=im;
+        if(!L.locked)setTool("select");
+        renderOverlay();showTab("object",true);
       }
     });
     const mk=(html,fn,off)=>{const b=document.createElement("button");
@@ -2302,6 +2369,7 @@ function togglePanel(force){
     p.classList.toggle("open",open);
   }
   $("#btnPanel").classList.toggle("on",panelVisible());
+  if(panelVisible())markPanelHint(false);
   requestAnimationFrame(()=>applyView());
 }
 function panelVisible(){
