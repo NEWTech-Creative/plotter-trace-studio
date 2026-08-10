@@ -30,7 +30,7 @@ input,textarea{-webkit-user-select:auto;user-select:auto}
 #panelbody,.dialog{touch-action:pan-y}
 /* only the SVG surface swallows gestures — buttons floating over it must stay tappable */
 #dockFab,#panelToggleFab,#imgConfirm{touch-action:manipulation}
-button,.tbtn,.dbtn,.sbtn,.ibtn,#paneltabs button,.exptabs button{touch-action:manipulation}
+button,.tbtn,.dbtn,.sbtn,.ibtn,.exptabs button{touch-action:manipulation}
 button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 input,select{font:inherit;color:var(--ink);background:var(--panel2);border:1px solid var(--line2);
   border-radius:6px;padding:6px 8px;min-height:34px}
@@ -70,6 +70,9 @@ input[type=checkbox]{width:18px;height:18px;accent-color:var(--pen);min-height:0
 .dbtn span{font-size:9.5px;letter-spacing:.02em}
 .dbtn:hover{background:var(--panel2);color:var(--ink)}
 .dbtn.on{background:var(--pen-soft);color:var(--pen)}
+.dbtn.hasopts{position:relative}
+.dbtn.hasopts::after{content:"";position:absolute;right:5px;bottom:5px;width:4px;height:4px;
+  border-radius:50%;background:currentColor;opacity:.42}
 .dsep{height:1px;background:var(--line);margin:5px 4px}
 
 #canvaswrap{flex:1;position:relative;min-width:0;background:
@@ -104,9 +107,15 @@ input[type=checkbox]{width:18px;height:18px;accent-color:var(--pen);min-height:0
 /* ---------- Right panel ---------- */
 #panel{width:296px;background:var(--panel);border-left:1px solid var(--line);display:flex;
   flex-direction:column;min-height:0;z-index:25}
-#paneltabs{display:flex;border-bottom:1px solid var(--line)}
-#paneltabs button{flex:1;padding:13px 4px;min-height:46px;font-size:12px;color:var(--mute);border-bottom:2px solid transparent}
-#paneltabs button.on{color:var(--pen);border-bottom-color:var(--pen)}
+#srail{display:flex;flex-direction:column;gap:2px;padding:8px 6px;background:var(--panel);
+  border-left:1px solid var(--line);overflow-y:auto;z-index:25}
+#panelhead{display:flex;align-items:center;gap:8px;padding:10px 8px 10px 14px;
+  border-bottom:1px solid var(--line);flex:0 0 auto}
+#panelttl{flex:1;font-size:12px;text-transform:uppercase;letter-spacing:.14em;color:var(--pen)}
+#panelClose{width:40px;height:40px;border-radius:8px;display:flex;align-items:center;
+  justify-content:center;color:var(--mute)}
+#panelClose:hover{background:var(--panel2);color:var(--ink)}
+#panelClose svg{width:18px;height:18px}
 #panelbody{flex:1;overflow-y:auto;padding:12px;-webkit-overflow-scrolling:touch}
 .sect{margin-bottom:16px}
 .sect h3{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--mute);margin-bottom:8px}
@@ -162,6 +171,14 @@ textarea.cmd{width:100%;font-family:var(--mono);font-size:12px;background:var(--
   height:52px;padding:0 20px 0 16px;border-radius:26px;background:var(--pen);color:#0d2620;
   font-weight:600;font-size:15px;box-shadow:var(--shadow);touch-action:manipulation}
 #imgConfirm.show{display:flex}
+/* a floating shortcut must never cover the surface it opened, or its items
+   become untappable — hide each one while its own panel is showing */
+body.panel-open #panelToggleFab{opacity:0;pointer-events:none;transform:scale(.8)}
+body.dock-open #dockFab{opacity:0;pointer-events:none;transform:scale(.8)}
+body.srail-open #panelToggleFab{opacity:0;pointer-events:none;transform:scale(.8)}
+#panelToggleFab,#dockFab{transition:opacity .15s,transform .15s}
+body.menu-open #dockFab,body.menu-open #panelToggleFab,body.menu-open #imgConfirm{
+  opacity:0;pointer-events:none}
 .tbtn.hint,#panelToggleFab.hint{position:relative}
 .tbtn.hint::after,#panelToggleFab.hint::after{content:"";position:absolute;top:6px;right:6px;
   width:8px;height:8px;border-radius:50%;background:var(--pen);box-shadow:0 0 0 2px var(--panel)}
@@ -191,7 +208,8 @@ textarea.cmd{width:100%;font-family:var(--mono);font-size:12px;background:var(--
   #dock{padding:8px 5px}                       /* rail stays visible: no tap cost to switch tools */
   .dbtn{width:54px;height:52px}
   #dockFab{display:none}
-  #panel{position:absolute;left:66px;right:0;bottom:0;top:auto;width:auto;
+  #srail{padding:8px 5px}
+  #panel{position:absolute;left:66px;right:64px;bottom:0;top:auto;width:auto;
     height:var(--sheeth,44dvh);min-height:180px;
     border-left:none;border-top:1px solid var(--line2);border-radius:16px 16px 0 0;
     transform:translateY(100%);transition:transform .22s;box-shadow:var(--shadow)}
@@ -203,7 +221,6 @@ textarea.cmd{width:100%;font-family:var(--mono);font-size:12px;background:var(--
   #panelToggleFab{display:flex;position:absolute;right:14px;bottom:14px;z-index:26;width:54px;height:54px;
     border-radius:50%;background:var(--panel2);border:1px solid var(--line2);color:var(--ink);
     align-items:center;justify-content:center;box-shadow:var(--shadow)}
-  #panelToggleFab{z-index:30}
   #panelToggleFab svg{width:24px;height:24px}
   .tbtn .lbl{display:none}
 }
@@ -216,6 +233,11 @@ textarea.cmd{width:100%;font-family:var(--mono);font-size:12px;background:var(--
   #dock.open{transform:none}
   .dbtn{width:56px;flex:0 0 auto}
   .dsep{width:1px;height:auto;margin:4px 5px}
+  #srail{position:absolute;left:0;right:0;bottom:0;top:auto;flex-direction:row;
+    justify-content:flex-start;overflow-x:auto;overflow-y:hidden;border-left:none;
+    border-top:1px solid var(--line);padding:6px 8px calc(6px + env(safe-area-inset-bottom));
+    transform:translateY(110%);transition:.22s}
+  #srail.open{transform:none}
   #panel{position:absolute;right:0;top:0;bottom:0;transform:translateX(105%);transition:.22s;
     box-shadow:var(--shadow);width:min(320px,88vw)}
   #panel.open{transform:none}
@@ -285,14 +307,13 @@ textarea.cmd{width:100%;font-family:var(--mono);font-size:12px;background:var(--
     <button id="panelToggleFab" title="Panels"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14 4v16"/></svg></button>
   </div>
 
+  <div id="srail"></div>
+
   <div id="panel">
     <div id="sheetgrip"></div>
-    <div id="paneltabs">
-      <button data-tab="stroke" class="on">Stroke</button>
-      <button data-tab="object">Object</button>
-      <button data-tab="layers">Layers</button>
-      <button data-tab="page">Page</button>
-      <button data-tab="plot">Plot</button>
+    <div id="panelhead">
+      <span id="panelttl">Stroke</span>
+      <button id="panelClose" title="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
     <div id="panelbody"></div>
   </div>
@@ -555,6 +576,69 @@ function distToPath(pt,p,maxD){
   }
   return best;
 }
+/* ================= Pattern engine =================
+   Copies are generated at render/export time from the live source paths, so editing a
+   stroke (or drawing a new one) updates every repeat instantly. Nothing is duplicated
+   in the document until the user bakes it. */
+function patCentre(){
+  const P=state.pattern;
+  return [P.cx==null?state.page.w/2:P.cx, P.cy==null?state.page.h/2:P.cy];
+}
+function patternXform(pt,i,P){
+  if(i===0)return pt.slice();
+  const [cx,cy]=patCentre();
+  const s=Math.pow(P.scaleStep||1,i);
+  if(P.mode==="linear"){
+    const a=(P.rot||0)*i*Math.PI/180;
+    const dx=pt[0]-cx, dy=pt[1]-cy;
+    return [cx+(dx*Math.cos(a)-dy*Math.sin(a))*s+(P.dx||0)*i,
+            cy+(dx*Math.sin(a)+dy*Math.cos(a))*s+(P.dy||0)*i];
+  }
+  // radial + kaleidoscope share polar maths
+  const dx=pt[0]-cx, dy=pt[1]-cy;
+  let r=Math.hypot(dx,dy)*s, phi=Math.atan2(dy,dx);
+  const step=2*Math.PI/Math.max(1,P.count);
+  let out;
+  if(P.mode==="kaleidoscope"&&i%2===1) out=-phi+(i+1)*step;   // mirrored wedge
+  else out=phi+i*step;
+  r+=(P.radius||0);
+  return [cx+Math.cos(out)*r, cy+Math.sin(out)*r];
+}
+function patternActive(){
+  const P=state.pattern;
+  return !!(P&&P.on&&P.count>1);
+}
+function patLayerOn(layerId){
+  const L=layerById(layerId);
+  return !L||L.pat!==false;
+}
+// every path that should be drawn / plotted, including generated repeats
+function effectivePaths(){
+  if(!patternActive())return state.paths.slice();
+  const P=state.pattern,out=[];
+  for(const p of state.paths){
+    if(!patLayerOn(p.layer)){out.push(p);continue;}
+    const xf=(q)=>q?q.map(v=>v?patternXform(v,0,P):null):null;
+    if(P.join&&!p.closed){
+      // one continuous route: end of each copy runs straight into the next copy's start
+      let pts=[];
+      for(let i=0;i<P.count;i++)for(const q of p.pts)pts.push(patternXform(q,i,P));
+      out.push({id:p.id+"_j",layer:p.layer,pts,closed:false,smooth:p.smooth,
+        width:p.width,__gen:true});
+    }else{
+      out.push(p);
+      for(let i=1;i<P.count;i++){
+        const c={id:p.id+"_p"+i,layer:p.layer,pts:p.pts.map(q=>patternXform(q,i,P)),
+          closed:p.closed,smooth:p.smooth,width:p.width,__gen:true};
+        if(p.nt)c.nt=p.nt.slice();
+        if(p.h)c.h=p.h.map(hh=>hh?[hh[0]?patternXform(hh[0],i,P):null,
+                                   hh[1]?patternXform(hh[1],i,P):null]:null);
+        out.push(c);
+      }
+    }
+  }
+  return out;
+}
 function pathBBox(p){
   const pts=flatPts(p,0.5);
   let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
@@ -571,14 +655,17 @@ let ui={tool:"draw",panelTab:"stroke",plotPreview:false,fingerDraw:true,
   eraserMode:"stroke",showNodes:false};
 
 function defaultState(name="Untitled trace",w=210,h=297,margin=10){
+  const L0={id:uid(),type:"vector",name:"Layer 1",color:"#1a1a1a",visible:true,locked:false,
+    opacity:1,pen:1,plot:true};
   return {
     name,page:{w,h,margin,grid:10,gridMinor:5,showGrid:false,snap:false},
     stroke:{width:0.4,smoothMM:0.4,simplify:0.08,color:null,spacing:0.2,minLen:1.2,joinTol:2.5},
     machine:{feed:2500,travel:6000,penUp:"M3 S90",penDown:"M3 S30",upDelay:0.25,downDelay:0.25,
       home:true,precision:2,flipY:true},
-    layers:[{id:uid(),type:"vector",name:"Layer 1",color:"#1a1a1a",visible:true,locked:false,
-      opacity:1,pen:1,plot:true}],
-    activeLayer:null, paths:[], images:[]
+    pattern:{on:false,mode:"linear",count:6,dx:25,dy:0,rot:0,scaleStep:1,
+      cx:null,cy:null,radius:0,join:false},
+    layers:[L0],
+    activeLayer:L0.id, paths:[], images:[]
   };
 }
 
@@ -650,6 +737,11 @@ function renderPage(){
   $("#btnSnap").classList.toggle("on",state.page.snap);
 }
 function layerById(id){return state.layers.find(l=>l.id===id);}
+function ensureActiveLayer(){
+  if(!state)return;
+  const cur=layerById(state.activeLayer);
+  if(!cur){const v=state.layers.find(l=>l.type==="vector");state.activeLayer=v?v.id:null;}
+}
 function activeLayer(){ // the vector layer strokes land on
   let l=layerById(state.activeLayer);
   if(!l||l.type!=="vector")l=state.layers.find(x=>x.type==="vector")||null;
@@ -720,13 +812,14 @@ function channelFilter(im){
 }
 function renderPaths(){
   gPaths.innerHTML="";
+  const renderList=effectivePaths();
   for(let i=state.layers.length-1;i>=0;i--){
     const L=state.layers[i];
     if(L.type!=="vector"||!L.visible)continue;
     const g=el("g",{opacity:L.opacity},gPaths);
-    for(const p of state.paths){
+    for(const p of (renderList||state.paths)){
       if(p.layer!==L.id)continue;
-      const isSel=sel.paths.has(p.id);
+      const isSel=!p.__gen&&sel.paths.has(p.id);
       if(isSel)el("path",{class:"pathhalo",d:pathToD(p),
         "stroke-width":(p.width||state.stroke.width)+2.4/view.zoom},g);
       const e=el("path",{d:pathToD(p),fill:"none",stroke:L.color,
@@ -815,10 +908,10 @@ function renderOverlay(){
 
 /* ---------------- Plot preview & stats ---------------- */
 function orderedPlotPaths(){
-  const out=[];
+  const out=[],list=effectivePaths();
   for(const L of state.layers){
     if(L.type!=="vector"||!L.plot||!L.visible)continue;
-    for(const p of state.paths)if(p.layer===L.id)out.push(p);
+    for(const p of list)if(p.layer===L.id)out.push(p);
   }
   return out;
 }
@@ -945,13 +1038,21 @@ function snapPt(pt){
   const s=state.page.gridMinor||state.page.grid||5;
   return [Math.round(pt[0]/s)*s,Math.round(pt[1]/s)*s];
 }
+function syncTools(){
+  $$("#dock .dbtn").forEach(b=>{
+    const k=b.dataset.tool;
+    b.classList.toggle("on", k==="pattern" ? !!(state.pattern&&state.pattern.on) : ui.tool===k);
+  });
+  $$("#srail .dbtn").forEach(b=>
+    b.classList.toggle("on", panelVisible()&&ui.panelTab===b.dataset.sect));
+}
 function setTool(t){
   ui.tool=t;
   if(t!=="node"){sel.nodePath=null;sel.nodes.clear();}
-  $$("#dock .dbtn").forEach(b=>b.classList.toggle("on",b.dataset.tool===t));
+  syncTools();
   renderOverlay();
   if(t==="draw"||t==="pen")showTab("stroke");
-  if(tier()==="C")$("#dock").classList.remove("open");   // only the phone tray auto-closes
+  if(tier()==="C"){$("#dock").classList.remove("open");document.body.classList.remove("dock-open");}
 }
 svg.addEventListener("contextmenu",e=>e.preventDefault());
 
@@ -1092,7 +1193,7 @@ wrap.addEventListener("wheel",e=>{
 },{passive:false});
 
 /* ----- freehand stroke ----- */
-let liveEl=null;
+let liveEl=null, livePatG=null;
 function smoothingAlpha(){ // light stabilisation only — never allowed to feel laggy
   return {none:1,light:.7,medium:.5,strong:.35}[state.stroke.smoothing]??.5;
 }
@@ -1164,11 +1265,31 @@ function strokeMove(pt,e){
   for(let i=1;i<s.live.length;i++)d+=`L${s.live[i][0]} ${s.live[i][1]}`;
   d+=`L${s.cur[0]} ${s.cur[1]}`;
   liveEl.setAttribute("d",d);
+  drawLivePattern(s);
 }
-function cancelStroke(){if(liveEl)liveEl.remove();liveEl=null;action=null;}
+// mirror the in-progress stroke through the pattern so it builds up live
+function drawLivePattern(s){
+  if(livePatG){livePatG.remove();livePatG=null;}
+  if(!patternActive())return;
+  const L=activeLayer(); if(!L||!patLayerOn(L.id))return;
+  const P=state.pattern;
+  const src=s.live.concat([s.cur]);
+  if(src.length<2)return;
+  livePatG=el("g",{},gLive);
+  for(let i=1;i<P.count;i++){
+    let dd="";
+    src.forEach((q,k)=>{const t=patternXform(q,i,P);
+      dd+=(k?"L":"M")+fmt(t[0],2)+" "+fmt(t[1],2);});
+    el("path",{d:dd,fill:"none",stroke:L.color,"stroke-width":state.stroke.width,
+      "stroke-linecap":"round","stroke-linejoin":"round",opacity:.55},livePatG);
+  }
+}
+function cancelStroke(){if(liveEl)liveEl.remove();if(livePatG)livePatG.remove();
+  liveEl=null;livePatG=null;action=null;}
 function finishStroke(){
   const s=action;action=null;
   if(liveEl){liveEl.remove();liveEl=null;}
+  if(livePatG){livePatG.remove();livePatG=null;}
   let raw=s.raw;
   if(dist(raw[raw.length-1],s.cur)>0.01)raw.push(s.cur.slice());
   if(raw.length<2||pathLength(raw)<state.stroke.minLen)return; // ignore accidental marks
@@ -1662,8 +1783,35 @@ const TOOLS=[
   ["node","Nodes",'<path d="M5 17c4-9 10-9 14-2"/><rect x="3" y="15" width="4" height="4"/><rect x="17" y="11" width="4" height="4"/><rect x="10" y="8" width="4" height="4"/>'],
   ["erase","Erase",'<path d="M7 20h10"/><path d="M5 15l8-8a2 2 0 0 1 3 0l3 3a2 2 0 0 1 0 3l-5 5H9z"/>'],
   null,
+  ["pattern","Repeat",'<circle cx="12" cy="12" r="2.4"/><circle cx="12" cy="4.6" r="1.7"/><circle cx="18.4" cy="8.3" r="1.7"/><circle cx="18.4" cy="15.7" r="1.7"/><circle cx="12" cy="19.4" r="1.7"/><circle cx="5.6" cy="15.7" r="1.7"/><circle cx="5.6" cy="8.3" r="1.7"/>'],
+  null,
   ["pan","Pan",'<path d="M12 3v18M3 12h18"/><path d="M12 3l-2.5 2.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/>'],
 ];
+const TOOL_OPTS={draw:"stroke",pen:"stroke",line:"stroke",rect:"stroke",ellipse:"stroke",
+  erase:"stroke",select:"object",node:"object",pattern:"pattern"};
+const SECTIONS=[
+  ["layers","Layers",'<rect x="3" y="4" width="18" height="5" rx="1"/><rect x="3" y="11" width="18" height="5" rx="1" opacity=".65"/><rect x="3" y="18" width="18" height="3" rx="1" opacity=".4"/>'],
+  ["object","Object",'<rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="4" cy="4" r="1.9" fill="currentColor"/><circle cx="20" cy="4" r="1.9" fill="currentColor"/><circle cx="4" cy="20" r="1.9" fill="currentColor"/><circle cx="20" cy="20" r="1.9" fill="currentColor"/>'],
+  ["page","Page",'<rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M7 6h10v12H7z" opacity=".45" stroke-dasharray="2.5 2"/>'],
+  ["plot","Plot",'<path d="M4 20h16"/><rect x="6" y="12" width="3" height="8" rx="1"/><rect x="11" y="7" width="3" height="13" rx="1"/><rect x="16" y="14" width="3" height="6" rx="1"/>'],
+  ["export","Export",'<path d="M12 3v11"/><path d="M8 7l4-4 4 4"/><rect x="4" y="15" width="16" height="6" rx="1.5"/>'],
+];
+function buildSettingsRail(){
+  const r=$("#srail");r.innerHTML="";
+  for(const [k,lbl,p] of SECTIONS){
+    const b=document.createElement("button");
+    b.className="dbtn";b.dataset.sect=k;b.title=lbl;
+    b.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${p}</svg><span>${lbl}</span>`;
+    b.addEventListener("click",()=>{
+      const closeTray=()=>{if(tier()==="C"){$("#srail").classList.remove("open");
+        document.body.classList.remove("srail-open");}};
+      if(k==="export"){closeTray();openExport();return;}
+      if(panelVisible()&&ui.panelTab===k){togglePanel(false);syncTools();return;}  // tap again to close
+      showTab(k);togglePanel(true);closeTray();syncTools();
+    });
+    r.appendChild(b);
+  }
+}
 function buildDock(){
   const dock=$("#dock");dock.innerHTML="";
   for(const t of TOOLS){
@@ -1671,19 +1819,44 @@ function buildDock(){
     const b=document.createElement("button");
     b.className="dbtn";b.dataset.tool=t[0];
     b.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${t[2]}</svg><span>${t[1]}</span>`;
+    if(TOOL_OPTS[t[0]])b.classList.add("hasopts");
+    let lpT=null,lpFired=false;
+    const openOpts=()=>{lpFired=true;
+      if(t[0]==="pattern"&&!state.pattern.on){state.pattern.on=true;renderPaths();}
+      showTab(TOOL_OPTS[t[0]]);togglePanel(true);syncTools();};
+    b.addEventListener("pointerdown",()=>{
+      if(!TOOL_OPTS[t[0]])return;
+      lpFired=false;clearTimeout(lpT);
+      lpT=setTimeout(openOpts,450);              // long-press reveals the sub-menu
+    });
+    for(const ev of ["pointerup","pointerleave","pointercancel"])
+      b.addEventListener(ev,()=>clearTimeout(lpT));
     b.addEventListener("click",()=>{
+      clearTimeout(lpT);
+      if(lpFired){lpFired=false;return;}
       if(t[0]!=="pen"&&penPath)finishPen();
+      if(t[0]==="pattern"){
+        state.pattern.on=!state.pattern.on;
+        renderPaths();syncTools();
+        toast(state.pattern.on?"Repeat on — long-press for options":"Repeat off");
+        if(ui.panelTab==="pattern"&&panelVisible())renderPanel();
+        return;
+      }
+      const already=ui.tool===t[0];
       setTool(t[0]);
+      if(already&&TOOL_OPTS[t[0]])openOpts();     // second tap on the active tool
     });
     dock.appendChild(b);
   }
 }
 
 /* ---------------- Right panel ---------------- */
+const SECT_TITLE={stroke:"Stroke",object:"Object",layers:"Layers",page:"Page",
+  plot:"Plot",pattern:"Repeat"};
 function showTab(t,reveal){
   ui.panelTab=t;
-  $$("#paneltabs button").forEach(b=>b.classList.toggle("on",b.dataset.tab===t));
-  renderPanel();
+  const ttl=$("#panelttl");if(ttl)ttl.textContent=SECT_TITLE[t]||t;
+  renderPanel();syncTools();
   // The panel never opens itself — selecting a tool or an object only switches which
   // tab is showing. A dot on the panel button hints that there's something new there.
   if(reveal&&!panelVisible())markPanelHint(true);
@@ -1694,7 +1867,7 @@ function markPanelHint(on){
   if(b)b.classList.toggle("hint",on);
   if(f)f.classList.toggle("hint",on);
 }
-$$("#paneltabs button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
+$("#panelClose").addEventListener("click",()=>{togglePanel(false);syncTools();});
 
 function slider(label,val,min,max,step,fn,fmtFn){
   const d=document.createElement("div");d.className="row";
@@ -1912,6 +2085,67 @@ function renderPanel(){
     add(`<p class="hint">Origin for G-code and DXF is the bottom-left corner of the page (Y flipped from screen). SVG keeps top-left, as SVG expects.</p>`);
   }
 
+  if(ui.panelTab==="pattern"){
+    const P=state.pattern;
+    add(`<div class="sect"><h3>Repeat</h3></div>`);
+    const tog=document.createElement("div");tog.className="btnrow";
+    const tb=document.createElement("button");
+    tb.className="sbtn"+(P.on?" primary":"");
+    tb.textContent=P.on?"Pattern ON":"Pattern OFF";
+    tb.addEventListener("click",()=>{P.on=!P.on;renderPaths();renderPanel();syncTools();});
+    tog.appendChild(tb);add(tog);
+
+    const modes=document.createElement("div");modes.className="btnrow";
+    for(const [k,lbl] of [["linear","Linear"],["radial","Radial"],["kaleidoscope","Kaleidoscope"]]){
+      const b=document.createElement("button");
+      b.className="sbtn"+(P.mode===k?" on":"");b.textContent=lbl;
+      b.addEventListener("click",()=>{P.mode=k;renderPaths();renderPanel();});
+      modes.appendChild(b);
+    }
+    add(modes);
+
+    add(slider("Repeats",P.count,2,60,1,v=>{P.count=Math.round(v);renderPaths();},v=>String(Math.round(v))));
+    if(P.mode==="linear"){
+      add(slider("Step X mm",P.dx,-100,100,0.5,v=>{P.dx=v;renderPaths();}));
+      add(slider("Step Y mm",P.dy,-100,100,0.5,v=>{P.dy=v;renderPaths();}));
+      add(slider("Turn °/copy",P.rot,-90,90,1,v=>{P.rot=v;renderPaths();},v=>fmt(v,0)));
+    }else{
+      const c=patCentre();
+      add(slider("Centre X mm",c[0],0,state.page.w,1,v=>{P.cx=v;renderPaths();},v=>fmt(v,0)));
+      add(slider("Centre Y mm",c[1],0,state.page.h,1,v=>{P.cy=v;renderPaths();},v=>fmt(v,0)));
+      add(slider("Push out mm",P.radius,-60,60,0.5,v=>{P.radius=v;renderPaths();}));
+    }
+    add(slider("Size /copy",P.scaleStep,0.7,1.3,0.005,v=>{P.scaleStep=v;renderPaths();},v=>fmt(v,3)));
+
+    const jr=document.createElement("div");jr.className="btnrow";
+    const jb=document.createElement("button");
+    jb.className="sbtn"+(P.join?" on":"");
+    jb.textContent=P.join?"Joined into one line":"Separate copies";
+    jb.addEventListener("click",()=>{P.join=!P.join;renderPaths();renderPanel();});
+    jr.appendChild(jb);
+    const cb=document.createElement("button");cb.className="sbtn";cb.textContent="Centre on drawing";
+    cb.addEventListener("click",()=>{
+      let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9,any=false;
+      for(const p of state.paths){const b=pathBBox(p);
+        x0=Math.min(x0,b.x0);y0=Math.min(y0,b.y0);x1=Math.max(x1,b.x1);y1=Math.max(y1,b.y1);any=true;}
+      if(!any)return toast("Draw something first");
+      P.cx=(x0+x1)/2;P.cy=(y0+y1)/2;renderPaths();renderPanel();});
+    jr.appendChild(cb);
+    add(jr);
+
+    const bk=document.createElement("div");bk.className="btnrow";
+    const bb=document.createElement("button");bb.className="sbtn";bb.textContent="Bake into real paths";
+    bb.addEventListener("click",bakePattern);
+    const rb=document.createElement("button");rb.className="sbtn";rb.textContent="Reset";
+    rb.addEventListener("click",()=>{pushHistory();
+      Object.assign(state.pattern,{mode:"linear",count:6,dx:25,dy:0,rot:0,scaleStep:1,
+        cx:null,cy:null,radius:0,join:false});renderPaths();renderPanel();});
+    bk.append(bb,rb);add(bk);
+
+    const n=patternActive()?effectivePaths().length:state.paths.length;
+    add(`<p class="hint">${state.paths.length} drawn \u00b7 ${n} plotted. Repeats are generated live \u2014 keep drawing and every copy follows, and editing a source stroke or its joins updates all of them identically. <b>Joined</b> links the end of each copy to the start of the next for one continuous plotter route. Bake when you want to edit copies individually.</p>`);
+  }
+
   if(ui.panelTab==="plot"){
     add(`<div class="sect"><h3>Plot order</h3></div>`);
     const r=document.createElement("div");r.className="btnrow";
@@ -1971,6 +2205,18 @@ function renderPanel(){
     });
     add(prof);
   }
+}
+function bakePattern(){
+  if(!patternActive())return toast("Turn the pattern on first");
+  pushHistory();
+  const baked=effectivePaths().map(p=>({id:p.__gen?uid():p.id,layer:p.layer,
+    pts:p.pts.map(q=>q.slice()),closed:p.closed,smooth:p.smooth,width:p.width,
+    nt:p.nt?p.nt.slice():undefined,h:p.h?p.h.map(x=>x?[x[0],x[1]]:null):undefined}));
+  state.paths=baked;
+  state.pattern.on=false;
+  clearSel();renderPaths();renderPanel();
+  syncTools();
+  toast(`Baked \u2014 ${baked.length} editable paths`);
 }
 function estTime(s){
   const m=state.machine;
@@ -2057,7 +2303,7 @@ function renderLayersPanel(body){
         state.layers=state.layers.filter(x=>x!==L);
         if(L.type==="vector")state.paths=state.paths.filter(p=>p.layer!==L.id);
         else state.images=state.images.filter(m=>m.id!==L.imageId);
-        clearSel();renderAll();renderPanel();},"sbtn danger");
+        ensureActiveLayer();clearSel();renderAll();renderPanel();},"sbtn danger");
       body.appendChild(acts);
     }
 
@@ -2072,6 +2318,14 @@ function renderLayersPanel(body){
       cr.querySelector("input[type=number]").addEventListener("change",e=>{L.pen=+e.target.value||1;scheduleAutosave();});
       opts.appendChild(cr);
       opts.appendChild(slider("Opacity",L.opacity,0.05,1,0.01,v=>{L.opacity=v;renderPaths();}));
+      if(state.pattern&&state.pattern.on){
+        const pr=document.createElement("div");pr.className="btnrow";
+        const pb=document.createElement("button");
+        pb.className="sbtn"+(L.pat!==false?" on":"");
+        pb.textContent=L.pat!==false?"Repeats this layer":"Excluded from repeat";
+        pb.addEventListener("click",()=>{L.pat=L.pat===false;renderPaths();renderPanel();});
+        pr.appendChild(pb);opts.appendChild(pr);
+      }
       body.appendChild(opts);
     }
     if(L.type==="image"&&L.id===state.activeLayer){
@@ -2140,7 +2394,7 @@ function exportPaths(){ // [ {layer, pts} ] in plot order, only plottable
   const out=[];
   for(const L of state.layers){
     if(L.type!=="vector"||!L.plot||!L.visible)continue;
-    for(const p of state.paths)if(p.layer===L.id)
+    for(const p of effectivePaths())if(p.layer===L.id)
       out.push({L,p,flat:flatPts(p,expCfg.dxfTol)});
   }
   return out;
@@ -2159,7 +2413,7 @@ function makeSVG(){
       continue;
     }
     if(L.type!=="vector"||!L.plot||!L.visible)continue;
-    const paths=state.paths.filter(p=>p.layer===L.id);
+    const paths=effectivePaths().filter(p=>p.layer===L.id);
     if(!paths.length)continue;
     out+=`  <g id="${L.name.replace(/[^\w-]/g,"_")||L.id}" inkscape:label="${L.name.replace(/"/g,"")}" `+
       `xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" `+
@@ -2303,8 +2557,11 @@ function openProjectFile(file){
 }
 function loadProjectData(data){
   state=data.state;
+  if(!state.pattern)state.pattern={on:false,mode:"linear",count:6,dx:25,dy:0,rot:0,
+    scaleStep:1,cx:null,cy:null,radius:0,join:false};
   for(const k in imageStore)delete imageStore[k];
   Object.assign(imageStore,data.images||{});
+  ensureActiveLayer();
   hist.undo.length=0;hist.redo.length=0;clearSel();
   renderAll();renderPanel();fitPage();updateHistBtns();
 }
@@ -2314,15 +2571,19 @@ $("#fileProj").addEventListener("change",e=>{
 });
 
 /* ---------------- Menus / modals / top bar ---------------- */
-$("#btnMenu").addEventListener("click",e=>{e.stopPropagation();$("#menu").classList.toggle("open");});
+function closeMenu(){$("#menu").classList.remove("open");document.body.classList.remove("menu-open");}
+$("#btnMenu").addEventListener("click",e=>{e.stopPropagation();
+  const o=$("#menu").classList.toggle("open");
+  document.body.classList.toggle("menu-open",o);});
 document.addEventListener("click",e=>{
-  if(!$("#menu").contains(e.target)&&e.target.id!=="btnMenu")$("#menu").classList.remove("open");
+  if(!$("#menu").contains(e.target)&&e.target.id!=="btnMenu"){
+    $("#menu").classList.remove("open");document.body.classList.remove("menu-open");}
 });
-$("#mNew").addEventListener("click",()=>{$("#menu").classList.remove("open");openNewDialog();});
-$("#mOpen").addEventListener("click",()=>{$("#menu").classList.remove("open");$("#fileProj").click();});
-$("#mSave").addEventListener("click",()=>{$("#menu").classList.remove("open");saveProjectFile();});
-$("#mImg").addEventListener("click",()=>{$("#menu").classList.remove("open");$("#fileImg").click();});
-$("#mHelp").addEventListener("click",()=>{$("#menu").classList.remove("open");$("#modalHelp").classList.add("open");});
+$("#mNew").addEventListener("click",()=>{closeMenu();openNewDialog();});
+$("#mOpen").addEventListener("click",()=>{closeMenu();$("#fileProj").click();});
+$("#mSave").addEventListener("click",()=>{closeMenu();saveProjectFile();});
+$("#mImg").addEventListener("click",()=>{closeMenu();$("#fileImg").click();});
+$("#mHelp").addEventListener("click",()=>{closeMenu();$("#modalHelp").classList.add("open");});
 $("#helpClose").addEventListener("click",()=>$("#modalHelp").classList.remove("open"));
 
 $("#btnUndo").addEventListener("click",undo);
@@ -2333,7 +2594,10 @@ $("#btnGrid").addEventListener("click",()=>{state.page.showGrid=!state.page.show
 $("#btnSnap").addEventListener("click",()=>{state.page.snap=!state.page.snap;renderPage();
   toast(state.page.snap?"Snapping to grid":"Snapping off");});
 $("#btnPlotPrev").addEventListener("click",()=>{ui.plotPreview=!ui.plotPreview;renderPlotPreview();});
-$("#dockFab").addEventListener("click",()=>$("#dock").classList.toggle("open"));
+$("#dockFab").addEventListener("click",()=>{
+  const open=$("#dock").classList.toggle("open");
+  document.body.classList.toggle("dock-open",open);
+});
 
 // ✓ Done — commit the image position, lock it, and hand control back to drawing
 $("#imgConfirm").addEventListener("click",()=>{
@@ -2369,7 +2633,11 @@ function togglePanel(force){
     p.classList.toggle("open",open);
   }
   $("#btnPanel").classList.toggle("on",panelVisible());
+  document.body.classList.toggle("panel-open",panelVisible());
+  if(panelVisible()){$("#srail").classList.remove("open");
+    document.body.classList.remove("srail-open");}
   if(panelVisible())markPanelHint(false);
+  syncTools();
   requestAnimationFrame(()=>applyView());
 }
 function panelVisible(){
@@ -2377,7 +2645,16 @@ function panelVisible(){
   return tier()==="A"?!p.classList.contains("hidden"):p.classList.contains("open");
 }
 $("#btnPanel").addEventListener("click",()=>togglePanel());
-$("#panelToggleFab").addEventListener("click",()=>togglePanel());
+$("#panelToggleFab").addEventListener("click",()=>{
+  if(tier()==="C"){
+    // phone: the settings rail is a tray, so reveal that rather than an empty panel
+    if(panelVisible()){togglePanel(false);return;}
+    const open=$("#srail").classList.toggle("open");
+    document.body.classList.toggle("srail-open",open);
+    return;
+  }
+  togglePanel();
+});
 
 // drag the grip to resize the bottom sheet (iPad portrait)
 (function(){
@@ -2467,7 +2744,7 @@ if(window.visualViewport)
   window.visualViewport.addEventListener("resize",()=>{if(state)fitPage();});
 
 function boot(){
-  buildScene();buildDock();
+  buildScene();buildDock();buildSettingsRail();
   let restored=false;
   try{
     const raw=localStorage.getItem("pts_project");
@@ -2482,6 +2759,7 @@ function boot(){
     renderAll();renderPanel();fitPage();
     openNewDialog();
   }
+  ensureActiveLayer();
   setTool("draw");
   updateHistBtns();
   $("#btnPanel").classList.toggle("on",panelVisible());
